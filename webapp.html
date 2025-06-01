@@ -53,12 +53,19 @@
             text-align: center;
             border: 1px solid rgba(255, 255, 255, 0.2);
             animation: slideUp 0.8s ease-out 0.2s both;
+            transition: all 0.3s ease;
+        }
+
+        .balance-card.updated {
+            transform: scale(1.02);
+            box-shadow: 0 0 20px rgba(76, 175, 80, 0.3);
         }
 
         .balance-amount {
             font-size: 2.5rem;
             font-weight: bold;
             margin-bottom: 5px;
+            transition: all 0.3s ease;
         }
 
         .balance-label {
@@ -121,6 +128,12 @@
             margin-bottom: 20px;
             border: 1px solid rgba(255, 255, 255, 0.2);
             animation: slideUp 0.8s ease-out 0.6s both;
+            transition: all 0.3s ease;
+        }
+
+        .stats-card.updated {
+            transform: scale(1.01);
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.2);
         }
 
         .stats-title {
@@ -241,13 +254,34 @@
             color: white;
         }
 
+        .btn-primary:disabled {
+            background: #666;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
         .btn-secondary {
             background: rgba(255, 255, 255, 0.2);
             color: white;
         }
 
-        .btn:hover {
+        .btn:hover:not(:disabled) {
             transform: translateY(-1px);
+        }
+
+        .success-message {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid rgba(76, 175, 80, 0.4);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .success-icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
         }
 
         @keyframes slideDown {
@@ -272,10 +306,35 @@
             }
         }
 
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
         .loading {
             text-align: center;
             padding: 20px;
             opacity: 0.7;
+        }
+
+        .pulse {
+            animation: pulse 1s ease-in-out;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+            100% {
+                transform: scale(1);
+            }
         }
     </style>
 </head>
@@ -286,7 +345,7 @@
             <div class="title">Финансовый трекер</div>
         </div>
 
-        <div class="balance-card">
+        <div class="balance-card" id="balanceCard">
             <div class="balance-amount" id="balance">0 ₽</div>
             <div class="balance-label">Текущий баланс</div>
         </div>
@@ -304,23 +363,22 @@
             </div>
         </div>
 
-        <div class="stats-card">
+        <div class="stats-card" id="statsCard">
             <div class="stats-title">📈 Статистика за месяц</div>
             <div id="stats-content" class="loading">Загружаем данные...</div>
         </div>
-
-        <!-- Тестовая кнопка для отладки
-        <div style="text-align: center; margin: 20px;">
-            <button onclick="testSaveFunction()" style="background: red; color: white; padding: 10px; border: none; border-radius: 5px;">
-                🧪 ТЕСТ: Вызвать saveTransaction
-            </button>
-        </div>
-    </div> -->
+    </div>
 
     <!-- Модальное окно -->
     <div class="modal" id="transactionModal">
         <div class="modal-content">
             <h3 id="modal-title">Добавить транзакцию</h3>
+            
+            <!-- Сообщение об успехе -->
+            <div id="successMessage" class="success-message" style="display: none;">
+                <div class="success-icon">✅</div>
+                <div id="successText">Транзакция добавлена!</div>
+            </div>
             
             <div class="form-group">
                 <label class="form-label">Сумма</label>
@@ -338,7 +396,7 @@
             </div>
 
             <div class="btn-group">
-                <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+                <button class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
                 <button class="btn btn-primary" id="saveBtn" onclick="saveTransaction()">Сохранить</button>
             </div>
         </div>
@@ -371,13 +429,6 @@
         const user_id = tg?.initDataUnsafe?.user?.id || 123456; // fallback для тестирования
         console.log('👤 User ID из Telegram:', user_id);
         
-        // API для поллинга
-        const API_BASE_URL = 'http://localhost:8080/api';
-        
-        // Получаем данные из URL параметров (первоначальная загрузка)
-        const urlParams = new URLSearchParams(window.location.search);
-        console.log('🔗 URL параметры:', Object.fromEntries(urlParams));
-        
         // Категории расходов
         const EXPENSE_CATEGORIES = ["Кофе", "Заведение", "Одежда", "Косметика", "Транспорт", "Здоровье"];
         
@@ -392,13 +443,7 @@
         // Загрузка данных при запуске
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🚀 DOM полностью загружен');
-            
-            // Принудительная очистка кэша
-            console.log('🧹 Очистка кэша...');
-            
             loadDataFromURL();
-            
-            // Принудительно привязываем события к кнопкам
             setupEventListeners();
         });
 
@@ -407,7 +452,6 @@
             console.log('📄 Событие pageshow, перезагружаем данные...');
             console.log('🔄 Событие из кэша:', event.persisted);
             
-            // Принудительно перезагружаем данные
             setTimeout(() => {
                 loadDataFromURL();
             }, 100);
@@ -416,12 +460,10 @@
         function setupEventListeners() {
             console.log('🔧 Настройка обработчиков событий...');
             
-            // Находим кнопку сохранения и привязываем событие
             const saveBtn = document.getElementById('saveBtn');
             if (saveBtn) {
                 console.log('✅ Кнопка сохранения найдена');
                 
-                // Удаляем старые обработчики и добавляем новый
                 saveBtn.removeEventListener('click', saveTransaction);
                 saveBtn.addEventListener('click', function(e) {
                     console.log('🎯 Клик по кнопке сохранения!');
@@ -433,24 +475,14 @@
             } else {
                 console.error('❌ Кнопка сохранения не найдена!');
             }
-            
-            // Тест функции
-            console.log('🧪 Тестируем функцию saveTransaction...');
-            if (typeof saveTransaction === 'function') {
-                console.log('✅ Функция saveTransaction определена');
-            } else {
-                console.error('❌ Функция saveTransaction НЕ определена!');
-            }
         }
 
         function loadDataFromURL() {
             console.log('📥 Загрузка данных из URL...');
             
-            // Принудительно перезагружаем URL параметры (для борьбы с кэшем)
             const urlParams = new URLSearchParams(window.location.search);
             console.log('🔗 Все URL параметры:', Object.fromEntries(urlParams));
             
-            // Читаем данные из URL параметров
             const balance = parseFloat(urlParams.get('balance')) || 0;
             const income = parseFloat(urlParams.get('income')) || 0;
             const expense = parseFloat(urlParams.get('expense')) || 0;
@@ -464,14 +496,12 @@
             console.log('⏰ Timestamp URL:', timestamp);
             console.log('👤 User ID из URL:', url_user_id);
             
-            // Очищаем старые данные перед загрузкой новых
             userData = {
                 balance: 0,
                 transactions: [],
                 monthlyStats: { income: {}, expense: {}, total_income: 0, total_expense: 0 }
             };
             
-            // Обновляем данные
             userData.balance = balance;
             userData.monthlyStats.total_income = income;
             userData.monthlyStats.total_expense = expense;
@@ -493,7 +523,6 @@
             updateBalance();
             updateStats();
             
-            // Показываем сообщение о загрузке данных
             if (balance !== 0 || income !== 0 || expense !== 0) {
                 console.log('✅ Данные успешно загружены из URL');
                 if (timestamp) {
@@ -511,12 +540,22 @@
 
         function updateBalance() {
             console.log('💰 Обновление баланса:', userData.balance);
-            document.getElementById('balance').textContent = userData.balance.toFixed(2) + ' ₽';
+            const balanceElement = document.getElementById('balance');
+            const balanceCard = document.getElementById('balanceCard');
+            
+            balanceElement.textContent = userData.balance.toFixed(2) + ' ₽';
+            
+            // Добавляем анимацию обновления
+            balanceCard.classList.add('updated');
+            setTimeout(() => {
+                balanceCard.classList.remove('updated');
+            }, 1000);
         }
 
         function updateStats() {
             console.log('📈 Обновление статистики:', userData.monthlyStats);
             const statsContent = document.getElementById('stats-content');
+            const statsCard = document.getElementById('statsCard');
             const stats = userData.monthlyStats;
             
             let html = '';
@@ -548,6 +587,12 @@
             
             console.log('📊 HTML статистики:', html);
             statsContent.innerHTML = html;
+            
+            // Добавляем анимацию обновления
+            statsCard.classList.add('updated');
+            setTimeout(() => {
+                statsCard.classList.remove('updated');
+            }, 1000);
         }
 
         function openModal(type) {
@@ -556,6 +601,10 @@
             const modalTitle = document.getElementById('modal-title');
             const categoryGroup = document.getElementById('category-group');
             const categoriesDiv = document.getElementById('categories');
+            const successMessage = document.getElementById('successMessage');
+            
+            // Скрываем сообщение об успехе
+            successMessage.style.display = 'none';
             
             if (type === 'income') {
                 modalTitle.textContent = 'Добавить доход';
@@ -564,7 +613,6 @@
                 modalTitle.textContent = 'Добавить расход';
                 categoryGroup.style.display = 'block';
                 
-                // Создаем кнопки категорий
                 categoriesDiv.innerHTML = '';
                 EXPENSE_CATEGORIES.forEach(category => {
                     const btn = document.createElement('div');
@@ -581,6 +629,11 @@
             document.getElementById('amount').value = '';
             document.getElementById('description').value = '';
             selectedCategory = '';
+            
+            // Сбрасываем состояние кнопки
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Сохранить';
         }
 
         function selectCategory(category) {
@@ -597,17 +650,38 @@
             document.getElementById('transactionModal').style.display = 'none';
         }
 
-        function testSaveFunction() {
-            console.log('🧪 ТЕСТОВАЯ ФУНКЦИЯ ВЫЗВАНА!');
+        function showSuccessMessage(amount, category, type) {
+            const successMessage = document.getElementById('successMessage');
+            const successText = document.getElementById('successText');
             
-            // Заполняем тестовые данные
-            document.getElementById('amount').value = '100';
-            document.getElementById('description').value = 'Тест';
-            currentTransactionType = 'expense';
-            selectedCategory = 'Кофе';
+            const typeText = type === 'income' ? 'Доход' : 'Расход';
+            successText.innerHTML = `
+                ${typeText} добавлен!<br>
+                <strong>${amount.toFixed(2)} ₽</strong> • ${category}
+            `;
             
-            console.log('🧪 Тестовые данные установлены, вызываем saveTransaction...');
-            saveTransaction();
+            successMessage.style.display = 'block';
+            
+            // Автоматически скрываем через 3 секунды
+            setTimeout(() => {
+                successMessage.style.display = 'none';
+            }, 3000);
+        }
+
+        function clearForm() {
+            document.getElementById('amount').value = '';
+            document.getElementById('description').value = '';
+            selectedCategory = '';
+            
+            // Убираем выделение с категорий
+            document.querySelectorAll('.category-btn').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            
+            // Сбрасываем состояние кнопки
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Сохранить';
         }
 
         function saveTransaction() {
@@ -617,6 +691,7 @@
             
             const amount = parseFloat(document.getElementById('amount').value);
             const description = document.getElementById('description').value;
+            const saveBtn = document.getElementById('saveBtn');
             
             console.log('💰 Сумма:', amount);
             console.log('📝 Описание:', description);
@@ -625,17 +700,28 @@
             
             if (!amount || amount <= 0) {
                 console.error('❌ Некорректная сумма');
-                tg.showAlert('Введите корректную сумму');
+                if (tg && typeof tg.showAlert === 'function') {
+                    tg.showAlert('Введите корректную сумму');
+                } else {
+                    alert('Введите корректную сумму');
+                }
                 return;
             }
             
             if (currentTransactionType === 'expense' && !selectedCategory) {
                 console.error('❌ Категория не выбрана');
-                tg.showAlert('Выберите категорию');
+                if (tg && typeof tg.showAlert === 'function') {
+                    tg.showAlert('Выберите категорию');
+                } else {
+                    alert('Выберите категорию');
+                }
                 return;
             }
             
-            // Создаем транзакцию для отправки боту
+            // Блокируем кнопку и показываем процесс
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Сохранение...';
+            
             const transaction = {
                 type: currentTransactionType,
                 amount: amount,
@@ -648,7 +734,7 @@
             console.log('🔧 Telegram WebApp доступен:', !!window.Telegram?.WebApp);
             console.log('🔧 sendData функция доступна:', typeof tg.sendData);
             
-            // Обновляем локальные данные для мгновенного отображения
+            // ✅ СРАЗУ ОБНОВЛЯЕМ ЛОКАЛЬНЫЕ ДАННЫЕ для мгновенного отображения
             userData.transactions.push(transaction);
             
             if (currentTransactionType === 'income') {
@@ -665,9 +751,15 @@
             
             console.log('📊 Обновленные локальные данные:', userData);
             
+            // ✅ ОБНОВЛЯЕМ ИНТЕРФЕЙС
             updateBalance();
             updateStats();
-            closeModal();
+            
+            // ✅ ПОКАЗЫВАЕМ СООБЩЕНИЕ ОБ УСПЕХЕ
+            showSuccessMessage(amount, transaction.category, currentTransactionType);
+            
+            // ✅ ОЧИЩАЕМ ФОРМУ (но НЕ закрываем модалку)
+            clearForm();
             
             // Отправляем данные боту через Telegram Web App API
             try {
@@ -675,7 +767,6 @@
                 const dataToSend = JSON.stringify(transaction);
                 console.log('📡 Данные для отправки (JSON):', dataToSend);
                 
-                // Проверяем, что функция доступна
                 if (typeof tg.sendData !== 'function') {
                     throw new Error('tg.sendData не является функцией');
                 }
@@ -683,29 +774,31 @@
                 tg.sendData(dataToSend);
                 console.log('✅ sendData вызван успешно');
                 
-                // Показываем уведомление
-                tg.showAlert(`${currentTransactionType === 'income' ? 'Доход' : 'Расход'} добавлен: ${amount} ₽`);
-                
-                // Попробуем закрыть приложение через небольшую задержку
-                setTimeout(() => {
-                    console.log('🔄 Пытаемся закрыть WebApp...');
-                    if (typeof tg.close === 'function') {
-                        tg.close();
-                    }
-                }, 1000);
+                // ✅ НЕ ЗАКРЫВАЕМ ПРИЛОЖЕНИЕ! Только показываем уведомление
+                if (typeof tg.showAlert === 'function') {
+                    // Не показываем alert, так как у нас есть красивое сообщение в интерфейсе
+                    console.log('ℹ️ Транзакция отправлена боту');
+                }
                 
             } catch (error) {
                 console.error('💥 Ошибка при отправке данных:', error);
                 
-                // Показываем детальную информацию об ошибке
                 console.error('🔧 Состояние tg:', tg);
                 console.error('🔧 Доступные методы tg:', Object.keys(tg || {}));
                 
-                tg.showAlert('Ошибка при отправке данных боту: ' + error.message);
+                // Возвращаем кнопку в нормальное состояние при ошибке
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Сохранить';
+                
+                if (tg && typeof tg.showAlert === 'function') {
+                    tg.showAlert('Ошибка при отправке данных боту: ' + error.message);
+                } else {
+                    alert('Ошибка при отправке данных боту: ' + error.message);
+                }
             }
         }
 
-        // Обработка закрытия приложения
+        // Обработка закрытия приложения (если пользователь сам захочет закрыть)
         if (tg) {
             tg.onEvent('mainButtonClicked', function() {
                 tg.close();
