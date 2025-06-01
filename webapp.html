@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Финансовый трекер</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            animation: slideDown 0.8s ease-out;
+        }
+
+        .logo {
+            font-size: 3rem;
+            margin-bottom: 10px;
+        }
+
+        .title {
+            font-size: 1.5rem;
+            font-weight: 300;
+            opacity: 0.9;
+        }
+
+        .balance-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 30px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            animation: slideUp 0.8s ease-out 0.2s both;
+        }
+
+        .balance-amount {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .balance-label {
+            opacity: 0.7;
+            font-size: 0.9rem;
+        }
+
+        .actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .action-btn {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            animation: slideUp 0.8s ease-out 0.4s both;
+        }
+
+        .action-btn:hover {
+            background: rgba(255, 255, 255, 0.25);
+            transform: translateY(-2px);
+        }
+
+        .action-btn.income {
+            border-left: 4px solid #4CAF50;
+        }
+
+        .action-btn.expense {
+            border-left: 4px solid #F44336;
+        }
+
+        .action-icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .action-title {
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+
+        .action-subtitle {
+            font-size: 0.8rem;
+            opacity: 0.7;
+        }
+
+        .stats-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            animation: slideUp 0.8s ease-out 0.6s both;
+        }
+
+        .stats-title {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .stat-item:last-child {
+            border-bottom: none;
+        }
+
+        .stat-category {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 30px;
+            width: 90%;
+            max-width: 350px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 1rem;
+        }
+
+        .form-input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .category-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .category-btn {
+            padding: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+
+        .category-btn:hover, .category-btn.selected {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">💰</div>
+            <div class="title">Финансовый трекер</div>
+        </div>
+
+        <div class="balance-card">
+            <div class="balance-amount" id="balance">0 ₽</div>
+            <div class="balance-label">Текущий баланс</div>
+        </div>
+
+        <div class="actions">
+            <div class="action-btn income" onclick="openModal('income')">
+                <div class="action-icon">💰</div>
+                <div class="action-title">Доход</div>
+                <div class="action-subtitle">Добавить поступление</div>
+            </div>
+            <div class="action-btn expense" onclick="openModal('expense')">
+                <div class="action-icon">💸</div>
+                <div class="action-title">Расход</div>
+                <div class="action-subtitle">Записать трату</div>
+            </div>
+        </div>
+
+        <div class="stats-card">
+            <div class="stats-title">📈 Статистика за месяц</div>
+            <div id="stats-content" class="loading">Загружаем данные...</div>
+        </div>
+    </div>
+
+    <!-- Модальное окно -->
+    <div class="modal" id="transactionModal">
+        <div class="modal-content">
+            <h3 id="modal-title">Добавить транзакцию</h3>
+            
+            <div class="form-group">
+                <label class="form-label">Сумма</label>
+                <input type="number" class="form-input" id="amount" placeholder="Введите сумму">
+            </div>
+
+            <div class="form-group" id="category-group">
+                <label class="form-label">Категория</label>
+                <div class="category-grid" id="categories"></div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Описание (необязательно)</label>
+                <input type="text" class="form-input" id="description" placeholder="Комментарий">
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+                <button class="btn btn-primary" onclick="saveTransaction()">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Инициализация Telegram Web App
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        // Категории расходов
+        const EXPENSE_CATEGORIES = ["Кофе", "Заведение", "Одежда", "Косметика", "Транспорт", "Здоровье"];
+        
+        let currentTransactionType = 'income';
+        let selectedCategory = '';
+        let userData = {
+            balance: 0,
+            transactions: [],
+            monthlyStats: { income: {}, expense: {}, total_income: 0, total_expense: 0 }
+        };
+
+        // Загрузка данных при запуске
+        document.addEventListener('DOMContentLoaded', function() {
+            loadData();
+        });
+
+        function loadData() {
+            // Эмуляция загрузки данных (в реальном приложении здесь будет API вызов)
+            setTimeout(() => {
+                updateBalance();
+                updateStats();
+            }, 1000);
+        }
+
+        function updateBalance() {
+            document.getElementById('balance').textContent = userData.balance.toFixed(2) + ' ₽';
+        }
+
+        function updateStats() {
+            const statsContent = document.getElementById('stats-content');
+            const stats = userData.monthlyStats;
+            
+            let html = '';
+            
+            if (stats.total_income > 0) {
+                html += `<div class="stat-item">
+                    <span class="stat-category">💰 Доходы</span>
+                    <span>${stats.total_income.toFixed(2)} ₽</span>
+                </div>`;
+            }
+            
+            if (stats.total_expense > 0) {
+                html += `<div class="stat-item">
+                    <span class="stat-category">💸 Расходы</span>
+                    <span>${stats.total_expense.toFixed(2)} ₽</span>
+                </div>`;
+                
+                for (const [category, amount] of Object.entries(stats.expense)) {
+                    html += `<div class="stat-item">
+                        <span class="stat-category">　• ${category}</span>
+                        <span>${amount.toFixed(2)} ₽</span>
+                    </div>`;
+                }
+            }
+            
+            if (html === '') {
+                html = '<div style="text-align: center; opacity: 0.7;">Пока нет данных</div>';
+            }
+            
+            statsContent.innerHTML = html;
+        }
+
+        function openModal(type) {
+            currentTransactionType = type;
+            const modal = document.getElementById('transactionModal');
+            const modalTitle = document.getElementById('modal-title');
+            const categoryGroup = document.getElementById('category-group');
+            const categoriesDiv = document.getElementById('categories');
+            
+            if (type === 'income') {
+                modalTitle.textContent = 'Добавить доход';
+                categoryGroup.style.display = 'none';
+            } else {
+                modalTitle.textContent = 'Добавить расход';
+                categoryGroup.style.display = 'block';
+                
+                // Создаем кнопки категорий
+                categoriesDiv.innerHTML = '';
+                EXPENSE_CATEGORIES.forEach(category => {
+                    const btn = document.createElement('div');
+                    btn.className = 'category-btn';
+                    btn.textContent = category;
+                    btn.onclick = () => selectCategory(category);
+                    categoriesDiv.appendChild(btn);
+                });
+            }
+            
+            modal.style.display = 'block';
+            
+            // Очистка формы
+            document.getElementById('amount').value = '';
+            document.getElementById('description').value = '';
+            selectedCategory = '';
+        }
+
+        function selectCategory(category) {
+            selectedCategory = category;
+            document.querySelectorAll('.category-btn').forEach(btn => {
+                btn.classList.remove('selected');
+                if (btn.textContent === category) {
+                    btn.classList.add('selected');
+                }
+            });
+        }
+
+        function closeModal() {
+            document.getElementById('transactionModal').style.display = 'none';
+        }
+
+        function saveTransaction() {
+            const amount = parseFloat(document.getElementById('amount').value);
+            const description = document.getElementById('description').value;
+            
+            if (!amount || amount <= 0) {
+                tg.showAlert('Введите корректную сумму');
+                return;
+            }
+            
+            if (currentTransactionType === 'expense' && !selectedCategory) {
+                tg.showAlert('Выберите категорию');
+                return;
+            }
+            
+            // Создаем транзакцию
+            const transaction = {
+                type: currentTransactionType,
+                amount: amount,
+                category: currentTransactionType === 'income' ? 'Доход' : selectedCategory,
+                description: description,
+                date: new Date().toISOString()
+            };
+            
+            // Обновляем данные
+            userData.transactions.push(transaction);
+            
+            if (currentTransactionType === 'income') {
+                userData.balance += amount;
+                userData.monthlyStats.total_income += amount;
+            } else {
+                userData.balance -= amount;
+                userData.monthlyStats.total_expense += amount;
+                if (!userData.monthlyStats.expense[selectedCategory]) {
+                    userData.monthlyStats.expense[selectedCategory] = 0;
+                }
+                userData.monthlyStats.expense[selectedCategory] += amount;
+            }
+            
+            // Обновляем интерфейс
+            updateBalance();
+            updateStats();
+            closeModal();
+            
+            // Показываем уведомление
+            tg.showAlert(`${currentTransactionType === 'income' ? 'Доход' : 'Расход'} добавлен: ${amount} ₽`);
+            
+            // В реальном приложении здесь будет отправка данных на сервер
+            // sendToBot(transaction);
+        }
+
+        // Функция для отправки данных боту (для интеграции)
+        function sendToBot(transaction) {
+            // Отправка данных через Telegram Web App API
+            tg.sendData(JSON.stringify(transaction));
+        }
+
+        // Обработка закрытия приложения
+        tg.onEvent('mainButtonClicked', function() {
+            tg.close();
+        });
+    </script>
+</body>
+</html>
