@@ -20,7 +20,7 @@ load_dotenv()
 # Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG,  # Более подробные логи
+    level=logging.DEBUG,
     handlers=[
         logging.FileHandler('bot.log'),
         logging.StreamHandler()
@@ -59,7 +59,15 @@ class FinanceTracker:
     
     def add_transaction(self, user_id: int, transaction_type: str, amount: float, 
                        category: str, description: str = ""):
-        """Добавление транзакции"""
+        """Добавление транзакции с валидацией"""
+        # ✅ Добавлена валидация
+        if amount <= 0:
+            raise ValueError("Сумма должна быть положительной")
+        if amount > 1000000:  # Лимит на сумму
+            raise ValueError("Сумма слишком большая")
+        if transaction_type not in ['income', 'expense']:
+            raise ValueError("Неверный тип транзакции")
+        
         logger.info(f"Добавление транзакции: user_id={user_id}, type={transaction_type}, amount={amount}, category={category}")
         
         conn = sqlite3.connect(self.db_path)
@@ -127,6 +135,9 @@ class FinanceTracker:
                 stats["expense"][category] = amount
                 stats["total_expense"] += amount
         
+        # ✅ ИСПРАВЛЕНО: добавлен return
+        return stats
+    
     def get_user_transactions(self, user_id: int, limit: int = 50) -> list:
         """Получение последних транзакций пользователя"""
         conn = sqlite3.connect(self.db_path)
@@ -182,23 +193,11 @@ EXPENSE_CATEGORIES = ["Кофе", "Заведение", "Одежда", "Кос�
 user_states = {}
 
 def get_main_keyboard(user_id: int):
-    """Главная клавиатура с веб-приложением - ВСЕГДА с актуальными данными"""
-    # КАЖДЫЙ РАЗ при создании клавиатуры генерируем свежий URL
+    """Главная клавиатура с веб-приложением"""
     webapp_url = get_webapp_url_with_data(user_id)
     
-    # ПОДРОБНОЕ логирование для отладки
     logger.info(f"🔧 Создание клавиатуры для пользователя {user_id}")
     logger.info(f"🌐 Сгенерированный URL: {webapp_url}")
-    
-    # Парсим URL для проверки
-    from urllib.parse import urlparse, parse_qs
-    parsed = urlparse(webapp_url)
-    params = parse_qs(parsed.query)
-    
-    logger.info(f"💰 Баланс в URL: {params.get('balance', ['не найден'])[0]}")
-    logger.info(f"📈 Доходы в URL: {params.get('income', ['не найден'])[0]}")
-    logger.info(f"📉 Расходы в URL: {params.get('expense', ['не найден'])[0]}")
-    logger.info(f"⏰ Timestamp в URL: {params.get('timestamp', ['не найден'])[0]}")
     
     keyboard = [
         [KeyboardButton("🚀 Открыть приложение", web_app=WebAppInfo(url=webapp_url))],
@@ -208,10 +207,6 @@ def get_main_keyboard(user_id: int):
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-def get_webapp_keyboard(user_id: int):
-    """Устаревшая функция - используем get_main_keyboard"""
-    return get_main_keyboard(user_id)
-
 def get_webapp_url_with_data(user_id: int) -> str:
     """Создание URL веб-приложения с данными пользователя"""
     try:
@@ -219,12 +214,10 @@ def get_webapp_url_with_data(user_id: int) -> str:
         
         logger.info(f"Создание URL с данными для пользователя {user_id}")
         
-        # Получаем данные пользователя
         user_stats = tracker.get_user_stats(user_id)
         
         logger.debug(f"Данные пользователя для URL: {user_stats}")
         
-        # Проверяем, что все данные есть
         balance = user_stats.get('balance', 0)
         monthly_stats = user_stats.get('monthlyStats', {})
         
@@ -235,14 +228,13 @@ def get_webapp_url_with_data(user_id: int) -> str:
         total_expense = monthly_stats.get('total_expense', 0)
         expense_categories = monthly_stats.get('expense', {})
         
-        # Кодируем данные в URL с уникальным параметром для предотвращения кэширования
         data = {
             'balance': balance,
             'income': total_income,
             'expense': total_expense,
             'expenses': json.dumps(expense_categories),
-            'timestamp': int(time.time()),  # Уникальный параметр для предотвращения кэша
-            'user_id': user_id  # Добавляем user_id для дополнительной уникальности
+            'timestamp': int(time.time()),
+            'user_id': user_id
         }
         
         query_string = urllib.parse.urlencode(data)
@@ -253,7 +245,6 @@ def get_webapp_url_with_data(user_id: int) -> str:
         
     except Exception as e:
         logger.error(f"Ошибка создания URL с данными: {e}")
-        # Возвращаем базовый URL без данных
         return os.getenv("WEBAPP_URL", "https://your-username.github.io/your-repo-name/webapp.html")
 
 def get_category_keyboard(transaction_type: str):
@@ -285,7 +276,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         welcome_text,
         parse_mode="Markdown",
-        reply_markup=get_main_keyboard(user_id)  # Сразу с актуальными данными!
+        reply_markup=get_main_keyboard(user_id)
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -336,16 +327,19 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         logger.info(f"Получены данные от Web App от пользователя {user_id}: {data}")
         
+        # ✅ Добавлена валидация данных
+        if 'type' not in data or 'amount' not in data or 'category' not in data:
+            raise ValueError("Неполные данные транзакции")
+        
         # Добавляем транзакцию из Web App
         tracker.add_transaction(
             user_id=user_id,
             transaction_type=data['type'],
-            amount=data['amount'],
+            amount=float(data['amount']),  # ✅ Принудительное приведение к float
             category=data['category'],
             description=data.get('description', '')
         )
         
-        # Получаем обновленный баланс
         new_balance = tracker.get_user_balance(user_id)
         
         transaction_type_text = "Доход" if data['type'] == 'income' else "Расход"
@@ -356,100 +350,31 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"📝 {data.get('description', '')}\n\n"
             f"🔄 *Новый баланс: {new_balance:.2f} ₽*",
             parse_mode="Markdown",
-            reply_markup=get_main_keyboard(user_id)  # Обновленные данные
+            reply_markup=get_main_keyboard(user_id)
         )
         
     except Exception as e:
         logger.error(f"Ошибка обработки Web App данных: {e}", exc_info=True)
         await update.message.reply_text("❌ Ошибка при обработке данных приложения")
 
-# Простой API для поллинга
-async def api_get_balance(request):
-    """Простой API для получения баланса"""
-    try:
-        user_id = request.query.get('user_id')
-        if not user_id:
-            return web.json_response({'error': 'user_id required'}, status=400)
-        
-        user_id = int(user_id)
-        user_stats = tracker.get_user_stats(user_id)
-        
-        logger.info(f"API запрос баланса для пользователя {user_id}: {user_stats['balance']}")
-        
-        return web.json_response({
-            'balance': user_stats['balance'],
-            'monthlyStats': user_stats['monthlyStats'],
-            'timestamp': int(time.time())
-        })
-        
-    except Exception as e:
-        logger.error(f"Ошибка API get_balance: {e}")
-        return web.json_response({'error': str(e)}, status=500)
-
-async def create_api_server():
-    """Создание простого API сервера"""
-    app = web.Application()
-    
-    # CORS для доступа с GitHub Pages
-    cors = aiohttp_cors.setup(app, defaults={
-        "*": aiohttp_cors.ResourceOptions(
-            allow_credentials=True,
-            expose_headers="*",
-            allow_headers="*",
-            allow_methods="*"
-        )
-    })
-    
-    # API маршрут
-    app.router.add_get('/api/balance', api_get_balance)
-    
-    # Добавляем CORS
-    for route in list(app.router.routes()):
-        cors.add(route)
-    
-    return app
-    """Команда помощи"""
-    help_text = """
-📖 *Как пользоваться ботом:*
-
-*Добавление транзакций:*
-1. Нажми "💰 Добавить доход" или "💸 Добавить расход"
-2. Выбери категорию
-3. Введи сумму (например: 1500 или 1500 за обед)
-
-*Просмотр данных:*
-• "📊 Баланс" - текущий баланс
-• "📈 Статистика" - данные за текущий месяц
-
-*Примеры ввода суммы:*
-• `1500`
-• `1500 зарплата`
-• `500 обед в кафе`
-"""
-    
-    await update.message.reply_text(help_text, parse_mode="Markdown")
-
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка сообщений"""
     user_id = update.effective_user.id
     text = update.message.text
     
-    # Инициализация состояния если нет
     if user_id not in user_states:
         user_states[user_id] = {"state": "main"}
     
     state = user_states[user_id]["state"]
     
-    # Обработка кнопки "Назад"
     if text == "🔙 Назад":
         user_states[user_id] = {"state": "main"}
         await update.message.reply_text(
             "Главное меню:",
-            reply_markup=get_main_keyboard(user_id)  # С актуальными данными
+            reply_markup=get_main_keyboard(user_id)
         )
         return
     
-    # Главное меню
     if state == "main":
         if text == "💰 Добавить доход":
             user_states[user_id] = {"state": "enter_income_amount"}
@@ -503,12 +428,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif difference < 0:
                 stats_text += " ❌"
             
-            await update.message.reply_text(stats_text, parse_mode="Markdown", reply_markup=get_dynamic_keyboard(user_id))
+            # ✅ ИСПРАВЛЕНО: используем get_main_keyboard вместо get_dynamic_keyboard
+            await update.message.reply_text(stats_text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
             
         elif text == "❓ Помощь":
             await help_command(update, context)
     
-    # Выбор категории расхода
     elif state == "select_expense_category":
         if text in EXPENSE_CATEGORIES:
             user_states[user_id] = {"state": "enter_expense_amount", "category": text}
@@ -518,37 +443,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🔙 Назад")]], resize_keyboard=True)
             )
     
-    # Ввод суммы дохода (без категории)
     elif state == "enter_income_amount":
         try:
-            # Парсинг суммы и описания
             parts = text.split(maxsplit=1)
             amount = float(parts[0])
             description = parts[1] if len(parts) > 1 else ""
             
             tracker.add_transaction(user_id, "income", amount, "Доход", description)
             
-            # Проверяем новый баланс
             new_balance = tracker.get_user_balance(user_id)
             logger.info(f"🔄 После добавления дохода: новый баланс = {new_balance}")
             
             await update.message.reply_text(
                 f"✅ Доход добавлен!\n\n💰 *{amount:.2f} ₽*\n📝 {description}",
                 parse_mode="Markdown",
-                reply_markup=get_main_keyboard(user_id)  # Обновленные данные
+                reply_markup=get_main_keyboard(user_id)
             )
             user_states[user_id] = {"state": "main"}
             
-        except ValueError:
+        except ValueError as e:
             await update.message.reply_text(
-                "❌ Неверный формат суммы!\n\nПример: `1500` или `1500 описание`",
+                f"❌ Ошибка: {str(e)}\n\nПример: `1500` или `1500 описание`",
                 parse_mode="Markdown"
             )
     
-    # Ввод суммы расхода
     elif state == "enter_expense_amount":
         try:
-            # Парсинг суммы и описания
             parts = text.split(maxsplit=1)
             amount = float(parts[0])
             description = parts[1] if len(parts) > 1 else ""
@@ -559,91 +479,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"✅ Расход добавлен!\n\n💸 *{amount:.2f} ₽*\n📂 {category}\n📝 {description}",
                 parse_mode="Markdown",
-                reply_markup=get_main_keyboard(user_id)  # Обновленные данные
+                reply_markup=get_main_keyboard(user_id)
             )
             user_states[user_id] = {"state": "main"}
             
-        except ValueError:
+        except ValueError as e:
             await update.message.reply_text(
-                "❌ Неверный формат суммы!\n\nПример: `500` или `500 обед`",
+                f"❌ Ошибка: {str(e)}\n\nПример: `500` или `500 обед`",
                 parse_mode="Markdown"
             )
 
-async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка данных из Web App"""
-    try:
-        user_id = update.effective_user.id
-        data = json.loads(update.effective_message.web_app_data.data)
-        
-        # Добавляем транзакцию из Web App
-        tracker.add_transaction(
-            user_id=user_id,
-            transaction_type=data['type'],
-            amount=data['amount'],
-            category=data['category'],
-            description=data.get('description', '')
-        )
-        
-        transaction_type_text = "Доход" if data['type'] == 'income' else "Расход"
-        await update.message.reply_text(
-            f"✅ {transaction_type_text} добавлен через приложение!\n\n"
-            f"💰 {data['amount']:.2f} ₽\n"
-            f"📂 {data['category']}\n"
-            f"📝 {data.get('description', '')}"
-        )
-        
-    except Exception as e:
-        logger.error(f"Ошибка обработки Web App данных: {e}")
-        await update.message.reply_text("❌ Ошибка при сохранении данных")
-
 def main():
-    """Запуск бота с API сервером"""
+    """Запуск бота"""
     if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
         print("❌ Ошибка: Токен бота не найден!")
         print("📝 Создайте файл .env и добавьте: BOT_TOKEN=ваш_токен_от_BotFather")
         return
     
-    async def start_bot_and_api():
-        # Запускаем API сервер
-        app = await create_api_server()
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, 'localhost', 8080)
-        await site.start()
-        print("🌐 API сервер запущен на http://localhost:8080")
-        
-        # Запускаем бота
-        print("🤖 Инициализация бота...")
-        application = Application.builder().token(BOT_TOKEN).build()
-        
-        # Добавление обработчиков
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(CommandHandler("refresh", refresh_command))
-        application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
-        application.add_handler(MessageHandler(filters.TEXT, handle_message))
-        
-        print("🤖 Бот запущен!")
-        print(f"📁 База данных: {DATABASE_PATH}")
-        print("📨 Ожидание сообщений...")
-        
-        # Запускаем бота
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-        
-        try:
-            await asyncio.Future()  # Ждем вечно
-        except KeyboardInterrupt:
-            print("Остановка...")
-        finally:
-            await application.updater.stop()
-            await application.stop()
-            await application.shutdown()
-            await runner.cleanup()
+    print("🤖 Инициализация бота...")
+    application = Application.builder().token(BOT_TOKEN).build()
     
-    # Запускаем все
-    asyncio.run(start_bot_and_api())
+    # Добавление обработчиков
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("refresh", refresh_command))
+    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
+    application.add_handler(MessageHandler(filters.TEXT, handle_message))
+    
+    print("🤖 Бот запущен!")
+    print(f"📁 База данных: {DATABASE_PATH}")
+    print("📨 Ожидание сообщений...")
+    
+    # Запускаем бота
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
