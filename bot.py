@@ -125,7 +125,7 @@ user_states = {}
 def get_main_keyboard():
     """Главная клавиатура с Web App"""
     # URL твоего размещенного HTML файла
-    webapp_url = "https://yourdomain.com/webapp.html"  # Замени на свой URL
+    webapp_url = os.getenv("GITHUB_DOMAIN")  # Замени на свой URL
     
     keyboard = [
         [KeyboardButton("🚀 Открыть приложение", web_app=WebAppInfo(url=webapp_url))],
@@ -211,7 +211,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Главное меню
     if state == "main":
-        if text == "💰 Добавить доход":
         if text == "💰 Добавить доход":
             user_states[user_id] = {"state": "enter_income_amount"}
             await update.message.reply_text(
