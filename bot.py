@@ -5,6 +5,9 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, Any
 from dotenv import load_dotenv
+from aiohttp import web, web_request
+import aiohttp_cors
+from aiohttp.web import Application as WebApplication
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -15,7 +18,11 @@ load_dotenv()
 # Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.DEBUG,  # Более подробные логи
+    handlers=[
+        logging.FileHandler('bot.log'),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -51,6 +58,8 @@ class FinanceTracker:
     def add_transaction(self, user_id: int, transaction_type: str, amount: float, 
                        category: str, description: str = ""):
         """Добавление транзакции"""
+        logger.info(f"Добавление транзакции: user_id={user_id}, type={transaction_type}, amount={amount}, category={category}")
+        
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -63,9 +72,12 @@ class FinanceTracker:
         
         conn.commit()
         conn.close()
+        logger.info(f"Транзакция успешно добавлена для пользователя {user_id}")
     
     def get_user_balance(self, user_id: int) -> float:
         """Получение баланса пользователя"""
+        logger.debug(f"Получение баланса для пользователя {user_id}")
+        
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -84,6 +96,7 @@ class FinanceTracker:
             else:
                 balance -= amount
         
+        logger.debug(f"Баланс пользователя {user_id}: {balance}")
         return balance
     
     def get_monthly_stats(self, user_id: int) -> Dict[str, Any]:
@@ -112,7 +125,50 @@ class FinanceTracker:
                 stats["expense"][category] = amount
                 stats["total_expense"] += amount
         
-        return stats
+    def get_user_transactions(self, user_id: int, limit: int = 50) -> list:
+        """Получение последних транзакций пользователя"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT type, amount, category, description, date 
+            FROM transactions 
+            WHERE user_id = ? 
+            ORDER BY date DESC 
+            LIMIT ?
+        ''', (user_id, limit))
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        transactions = []
+        for row in results:
+            transactions.append({
+                'type': row[0],
+                'amount': row[1],
+                'category': row[2],
+                'description': row[3],
+                'date': row[4]
+            })
+        
+        return transactions
+
+    def get_user_stats(self, user_id: int) -> Dict[str, Any]:
+        """Получение полной статистики пользователя"""
+        logger.info(f"Получение полной статистики для пользователя {user_id}")
+        
+        balance = self.get_user_balance(user_id)
+        monthly_stats = self.get_monthly_stats(user_id)
+        transactions = self.get_user_transactions(user_id, 10)
+        
+        result = {
+            'balance': balance,
+            'monthlyStats': monthly_stats,
+            'recentTransactions': transactions
+        }
+        
+        logger.info(f"Статистика пользователя {user_id}: balance={balance}, transactions_count={len(transactions)}")
+        return result
 
 # Инициализация трекера
 tracker = FinanceTracker()
@@ -168,32 +224,168 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_main_keyboard()
     )
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда помощи"""
+    help_text = """
+📖 *Как пользоваться ботом:*
+
+🚀 *Веб-приложение:*
+Нажми "🚀 Открыть приложение" для современного интерфейса
+
+*Добавление транзакций:*
+1. Нажми "💰 Добавить доход" или "💸 Добавить расход"
+2. Выбери категорию (для расходов)
+3. Введи сумму (например: 1500 или 1500 за обед)
+
+*Просмотр данных:*
+• "📊 Баланс" - текущий баланс
+• "📈 Статистика" - данные за текущий месяц
+
+*Примеры ввода суммы:*
+• `1500`
+• `1500 зарплата`
+• `500 обед в кафе`
+"""
+    
+    await update.message.reply_text(help_text, parse_mode="Markdown")
+
 async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка данных из Web App"""
     try:
         user_id = update.effective_user.id
         data = json.loads(update.effective_message.web_app_data.data)
         
-        # Добавляем транзакцию из Web App
-        tracker.add_transaction(
-            user_id=user_id,
-            transaction_type=data['type'],
-            amount=data['amount'],
-            category=data['category'],
-            description=data.get('description', '')
-        )
+        logger.info(f"Получены данные от Web App: {data}")
         
-        transaction_type_text = "Доход" if data['type'] == 'income' else "Расход"
-        await update.message.reply_text(
-            f"✅ {transaction_type_text} добавлен через приложение!\n\n"
-            f"💰 {data['amount']:.2f} ₽\n"
-            f"📂 {data['category']}\n"
-            f"📝 {data.get('description', '')}"
-        )
+        action = data.get('action')
+        
+        if action == 'get_data':
+            # Запрос данных пользователя
+            logger.info(f"Запрос данных для пользователя {user_id}")
+            user_stats = tracker.get_user_stats(user_id)
+            
+            # Отправляем данные обратно (можно через inline кнопку или просто сообщение)
+            stats_text = f"📊 *Ваши данные:*\n\n"
+            stats_text += f"💰 Баланс: {user_stats['balance']:.2f} ₽\n"
+            stats_text += f"📈 Доходы за месяц: {user_stats['monthlyStats']['total_income']:.2f} ₽\n"
+            stats_text += f"📉 Расходы за месяц: {user_stats['monthlyStats']['total_expense']:.2f} ₽\n"
+            stats_text += f"🔄 Данные синхронизированы!"
+            
+            await update.message.reply_text(stats_text, parse_mode="Markdown")
+            
+        elif action == 'add_transaction':
+            # Добавление транзакции
+            logger.info(f"Добавление транзакции через Web App для пользователя {user_id}")
+            
+            tracker.add_transaction(
+                user_id=user_id,
+                transaction_type=data['type'],
+                amount=data['amount'],
+                category=data['category'],
+                description=data.get('description', '')
+            )
+            
+            transaction_type_text = "Доход" if data['type'] == 'income' else "Расход"
+            await update.message.reply_text(
+                f"✅ {transaction_type_text} добавлен через приложение!\n\n"
+                f"💰 {data['amount']:.2f} ₽\n"
+                f"📂 {data['category']}\n"
+                f"📝 {data.get('description', '')}"
+            )
+        else:
+            logger.warning(f"Неизвестное действие Web App: {action}")
+            await update.message.reply_text("❌ Неизвестная команда от приложения")
         
     except Exception as e:
-        logger.error(f"Ошибка обработки Web App данных: {e}")
-        await update.message.reply_text("❌ Ошибка при сохранении данных")
+        logger.error(f"Ошибка обработки Web App данных: {e}", exc_info=True)
+        await update.message.reply_text("❌ Ошибка при обработке данных приложения")
+
+# API обработчики для веб-приложения
+async def api_get_user_data(request):
+    """API для получения данных пользователя"""
+    try:
+        logger.info(f"API запрос get_user_data: {request.query}")
+        
+        # Получаем user_id из параметров запроса
+        user_id = request.query.get('user_id')
+        if not user_id:
+            logger.warning("API запрос без user_id")
+            return web.json_response({'error': 'user_id required'}, status=400)
+        
+        user_id = int(user_id)
+        logger.info(f"Обработка запроса данных для пользователя {user_id}")
+        
+        user_data = tracker.get_user_stats(user_id)
+        
+        logger.info(f"Возвращаем данные пользователя {user_id}: {user_data}")
+        return web.json_response(user_data)
+        
+    except Exception as e:
+        logger.error(f"Ошибка API get_user_data: {e}", exc_info=True)
+        return web.json_response({'error': 'Internal server error'}, status=500)
+
+async def api_add_transaction(request):
+    """API для добавления транзакции"""
+    try:
+        logger.info("API запрос add_transaction")
+        data = await request.json()
+        logger.info(f"Данные транзакции: {data}")
+        
+        user_id = data.get('user_id')
+        transaction_type = data.get('type')
+        amount = float(data.get('amount'))
+        category = data.get('category')
+        description = data.get('description', '')
+        
+        if not all([user_id, transaction_type, amount, category]):
+            logger.warning(f"Неполные данные транзакции: {data}")
+            return web.json_response({'error': 'Missing required fields'}, status=400)
+        
+        logger.info(f"Добавление транзакции через API для пользователя {user_id}")
+        tracker.add_transaction(user_id, transaction_type, amount, category, description)
+        
+        # Возвращаем обновленные данные
+        user_data = tracker.get_user_stats(user_id)
+        logger.info(f"Транзакция добавлена, возвращаем обновленные данные")
+        return web.json_response({'success': True, 'data': user_data})
+        
+    except Exception as e:
+        logger.error(f"Ошибка API add_transaction: {e}", exc_info=True)
+        return web.json_response({'error': 'Internal server error'}, status=500)
+
+async def create_web_app():
+    """Создание веб-приложения для API"""
+    logger.info("Создание веб-приложения для API")
+    
+    app = WebApplication()
+    
+    # Настройка CORS
+    cors = aiohttp_cors.setup(app, defaults={
+        "*": aiohttp_cors.ResourceOptions(
+            allow_credentials=True,
+            expose_headers="*",
+            allow_headers="*",
+            allow_methods="*"
+        )
+    })
+    
+    # API маршруты
+    app.router.add_get('/api/user-data', api_get_user_data)
+    app.router.add_post('/api/add-transaction', api_add_transaction)
+    
+    # Добавляем простой тестовый роут
+    async def health_check(request):
+        logger.info("Health check запрос")
+        return web.json_response({'status': 'ok', 'message': 'API работает'})
+    
+    app.router.add_get('/health', health_check)
+    
+    # Добавляем CORS для всех маршрутов
+    for route in list(app.router.routes()):
+        cors.add(route)
+    
+    logger.info("Веб-приложение создано")
+    return app
     """Команда помощи"""
     help_text = """
 📖 *Как пользоваться ботом:*
@@ -351,6 +543,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
 
+async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка данных из Web App"""
+    try:
+        user_id = update.effective_user.id
+        data = json.loads(update.effective_message.web_app_data.data)
+        
+        # Добавляем транзакцию из Web App
+        tracker.add_transaction(
+            user_id=user_id,
+            transaction_type=data['type'],
+            amount=data['amount'],
+            category=data['category'],
+            description=data.get('description', '')
+        )
+        
+        transaction_type_text = "Доход" if data['type'] == 'income' else "Расход"
+        await update.message.reply_text(
+            f"✅ {transaction_type_text} добавлен через приложение!\n\n"
+            f"💰 {data['amount']:.2f} ₽\n"
+            f"📂 {data['category']}\n"
+            f"📝 {data.get('description', '')}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка обработки Web App данных: {e}")
+        await update.message.reply_text("❌ Ошибка при сохранении данных")
+
+import asyncio
+
 def main():
     """Запуск бота"""
     if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
@@ -358,17 +579,45 @@ def main():
         print("📝 Создайте файл .env и добавьте: BOT_TOKEN=ваш_токен_от_BotFather")
         return
     
-    application = Application.builder().token(BOT_TOKEN).build()
+    async def start_bot_and_server():
+        # Создаем и запускаем API сервер
+        web_app = await create_web_app()
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, 'localhost', 8080)
+        await site.start()
+        print("🌐 API сервер запущен на http://localhost:8080")
+        
+        # Создаем и запускаем бота
+        application = Application.builder().token(BOT_TOKEN).build()
+        
+        # Добавление обработчиков
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        
+        print("🤖 Бот запущен!")
+        print(f"📁 База данных: {DATABASE_PATH}")
+        
+        # Запускаем бота
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        
+        # Ждем бесконечно
+        try:
+            await asyncio.Future()  # Ждем вечно
+        except KeyboardInterrupt:
+            print("Остановка...")
+        finally:
+            await application.updater.stop()
+            await application.stop()
+            await application.shutdown()
+            await runner.cleanup()
     
-    # Добавление обработчиков
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    print("🤖 Бот запущен!")
-    print(f"📁 База данных: {DATABASE_PATH}")
-    application.run_polling()
+    # Запускаем все
+    asyncio.run(start_bot_and_server())
 
 if __name__ == "__main__":
     main()

@@ -304,6 +304,14 @@
             </div>
         </div>
 
+        <div class="actions" style="grid-template-columns: 1fr; margin-bottom: 20px;">
+            <div class="action-btn" style="background: rgba(76, 175, 80, 0.2); border-left: 4px solid #4CAF50;" onclick="syncData()">
+                <div class="action-icon">🔄</div>
+                <div class="action-title">Синхронизировать данные</div>
+                <div class="action-subtitle">Загрузить из бота</div>
+            </div>
+        </div>
+
         <div class="stats-card">
             <div class="stats-title">📈 Статистика за месяц</div>
             <div id="stats-content" class="loading">Загружаем данные...</div>
@@ -343,6 +351,24 @@
         tg.ready();
         tg.expand();
 
+        // Получаем данные пользователя из Telegram
+        console.log('🔍 Telegram Web App данные:', tg.initData);
+        console.log('🔍 Parsed данные:', tg.initDataUnsafe);
+        
+        const user_id = tg.initDataUnsafe?.user?.id;
+        
+        console.log('👤 User ID из Telegram:', user_id);
+        
+        if (!user_id) {
+            console.warn('⚠️ User ID не найден, используем fallback');
+            // Для тестирования покажем сообщение
+            document.getElementById('stats-content').innerHTML = 
+                '<div style="color: orange;">⚠️ Откройте через Telegram бота для синхронизации данных</div>';
+        }
+        
+        // Отключаем API вызовы - будем работать через sendData
+        const USE_API = false; // Переключатель для тестирования
+
         // Категории расходов
         const EXPENSE_CATEGORIES = ["Кофе", "Заведение", "Одежда", "Косметика", "Транспорт", "Здоровье"];
         
@@ -356,22 +382,95 @@
 
         // Загрузка данных при запуске
         document.addEventListener('DOMContentLoaded', function() {
-            loadData();
-        });
-
-        function loadData() {
-            // Эмуляция загрузки данных (в реальном приложении здесь будет API вызов)
-            setTimeout(() => {
+            if (USE_API && user_id) {
+                // Запрашиваем данные из бота через специальную команду
+                requestDataFromBot();
+            } else {
+                // Показываем пустое состояние
                 updateBalance();
                 updateStats();
-            }, 1000);
+            }
+        });
+
+        function requestDataFromBot() {
+            console.log('📤 Запрашиваем данные из бота...');
+            // Отправляем запрос боту на получение данных
+            tg.sendData(JSON.stringify({
+                action: 'get_data',
+                user_id: user_id
+            }));
+        }
+
+        function loadDataFromBot(data) {
+            console.log('📥 Получены данные от бота:', data);
+            
+            if (data.balance !== undefined) {
+                userData.balance = data.balance;
+            }
+            if (data.monthlyStats) {
+                userData.monthlyStats = data.monthlyStats;
+            }
+            if (data.recentTransactions) {
+                userData.transactions = data.recentTransactions;
+            }
+            
+            updateBalance();
+            updateStats();
+        }
+
+        async function saveTransactionToAPI(transaction) {
+            console.log('💾 Сохранение транзакции через API:', transaction);
+            console.log('👤 User ID для сохранения:', user_id);
+            
+            try {
+                const url = `${API_BASE}/add-transaction`;
+                const payload = {
+                    user_id: user_id,
+                    ...transaction
+                };
+                
+                console.log('📡 Отправляем транзакцию:', url, payload);
+                
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                console.log('📥 Ответ на сохранение:', response.status, response.statusText);
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('✅ Транзакция сохранена:', result);
+                    
+                    // Обновляем данные из ответа API
+                    if (result.data) {
+                        userData.balance = result.data.balance;
+                        userData.monthlyStats = result.data.monthlyStats;
+                        userData.transactions = result.data.recentTransactions || [];
+                        console.log('📊 Данные обновлены из API:', userData);
+                    }
+                    return true;
+                } else {
+                    const errorText = await response.text();
+                    console.error('❌ Ошибка сохранения:', response.status, errorText);
+                    return false;
+                }
+            } catch (error) {
+                console.error('💥 Ошибка соединения при сохранении:', error);
+                return false;
+            }
         }
 
         function updateBalance() {
+            console.log('💰 Обновление баланса:', userData.balance);
             document.getElementById('balance').textContent = userData.balance.toFixed(2) + ' ₽';
         }
 
         function updateStats() {
+            console.log('📈 Обновление статистики:', userData.monthlyStats);
             const statsContent = document.getElementById('stats-content');
             const stats = userData.monthlyStats;
             
@@ -402,6 +501,7 @@
                 html = '<div style="text-align: center; opacity: 0.7;">Пока нет данных</div>';
             }
             
+            console.log('📊 HTML статистики:', html);
             statsContent.innerHTML = html;
         }
 
@@ -452,7 +552,7 @@
             document.getElementById('transactionModal').style.display = 'none';
         }
 
-        function saveTransaction() {
+        async function saveTransaction() {
             const amount = parseFloat(document.getElementById('amount').value);
             const description = document.getElementById('description').value;
             
@@ -475,37 +575,75 @@
                 date: new Date().toISOString()
             };
             
-            // Обновляем данные
-            userData.transactions.push(transaction);
+            // Показываем загрузку
+            const saveBtn = document.querySelector('.btn-primary');
+            const originalText = saveBtn.textContent;
+            saveBtn.textContent = 'Сохранение...';
+            saveBtn.disabled = true;
             
-            if (currentTransactionType === 'income') {
-                userData.balance += amount;
-                userData.monthlyStats.total_income += amount;
+            // Сохраняем через API
+            const success = await saveTransactionToAPI(transaction);
+            
+            if (success) {
+                // Обновляем интерфейс
+                updateBalance();
+                updateStats();
+                closeModal();
+                
+                // Показываем уведомление
+                tg.showAlert(`${currentTransactionType === 'income' ? 'Доход' : 'Расход'} добавлен: ${amount} ₽`);
             } else {
-                userData.balance -= amount;
-                userData.monthlyStats.total_expense += amount;
-                if (!userData.monthlyStats.expense[selectedCategory]) {
-                    userData.monthlyStats.expense[selectedCategory] = 0;
+                // Если API недоступен, обновляем локально
+                userData.transactions.push(transaction);
+                
+                if (currentTransactionType === 'income') {
+                    userData.balance += amount;
+                    userData.monthlyStats.total_income += amount;
+                } else {
+                    userData.balance -= amount;
+                    userData.monthlyStats.total_expense += amount;
+                    if (!userData.monthlyStats.expense[selectedCategory]) {
+                        userData.monthlyStats.expense[selectedCategory] = 0;
+                    }
+                    userData.monthlyStats.expense[selectedCategory] += amount;
                 }
-                userData.monthlyStats.expense[selectedCategory] += amount;
+                
+                updateBalance();
+                updateStats();
+                closeModal();
+                
+                tg.showAlert(`${currentTransactionType === 'income' ? 'Доход' : 'Расход'} добавлен локально: ${amount} ₽`);
             }
             
-            // Обновляем интерфейс
-            updateBalance();
-            updateStats();
-            closeModal();
-            
-            // Показываем уведомление
-            tg.showAlert(`${currentTransactionType === 'income' ? 'Доход' : 'Расход'} добавлен: ${amount} ₽`);
-            
-            // В реальном приложении здесь будет отправка данных на сервер
-            // sendToBot(transaction);
+            // Восстанавливаем кнопку
+            saveBtn.textContent = originalText;
+            saveBtn.disabled = false;
         }
 
-        // Функция для отправки данных боту (для интеграции)
-        function sendToBot(transaction) {
-            // Отправка данных через Telegram Web App API
-            tg.sendData(JSON.stringify(transaction));
+        function syncData() {
+            console.log('🔄 Запуск синхронизации данных...');
+            
+            if (!user_id) {
+                tg.showAlert('Откройте приложение через Telegram бота');
+                return;
+            }
+            
+            // Показываем, что синхронизация запущена
+            const syncBtn = document.querySelector('.action-btn[onclick="syncData()"]');
+            const originalHTML = syncBtn.innerHTML;
+            syncBtn.innerHTML = `
+                <div class="action-icon">⏳</div>
+                <div class="action-title">Синхронизация...</div>
+                <div class="action-subtitle">Загружаем данные</div>
+            `;
+            
+            // Отправляем запрос на синхронизацию
+            requestDataFromBot();
+            
+            // Восстанавливаем кнопку через 2 секунды
+            setTimeout(() => {
+                syncBtn.innerHTML = originalHTML;
+            }, 2000);
         }
 
         // Обработка закрытия приложения
