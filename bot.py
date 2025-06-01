@@ -327,36 +327,69 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         logger.info(f"Получены данные от Web App от пользователя {user_id}: {data}")
         
-        # ✅ Добавлена валидация данных
-        if 'type' not in data or 'amount' not in data or 'category' not in data:
-            raise ValueError("Неполные данные транзакции")
-        
-        # Добавляем транзакцию из Web App
-        tracker.add_transaction(
-            user_id=user_id,
-            transaction_type=data['type'],
-            amount=float(data['amount']),  # ✅ Принудительное приведение к float
-            category=data['category'],
-            description=data.get('description', '')
-        )
-        
-        new_balance = tracker.get_user_balance(user_id)
-        
-        transaction_type_text = "Доход" if data['type'] == 'income' else "Расход"
-        await update.message.reply_text(
-            f"✅ {transaction_type_text} добавлен через приложение!\n\n"
-            f"💰 {data['amount']:.2f} ₽\n"
-            f"📂 {data['category']}\n"
-            f"📝 {data.get('description', '')}\n\n"
-            f"🔄 *Новый баланс: {new_balance:.2f} ₽*",
-            parse_mode="Markdown",
-            reply_markup=get_main_keyboard(user_id)
-        )
+        # Проверяем, это одна транзакция или пакет
+        if 'transactions' in data:
+            # Обработка пакета транзакций (при синхронизации)
+            transactions = data['transactions']
+            total_income = 0
+            total_expense = 0
+            
+            for transaction in transactions:
+                tracker.add_transaction(
+                    user_id=user_id,
+                    transaction_type=transaction['type'],
+                    amount=float(transaction['amount']),
+                    category=transaction['category'],
+                    description=transaction.get('description', '')
+                )
+                
+                if transaction['type'] == 'income':
+                    total_income += float(transaction['amount'])
+                else:
+                    total_expense += float(transaction['amount'])
+            
+            new_balance = tracker.get_user_balance(user_id)
+            
+            await update.message.reply_text(
+                f"✅ Синхронизация завершена!\n\n"
+                f"📊 Добавлено транзакций: {len(transactions)}\n"
+                f"💰 Общий доход: {total_income:.2f} ₽\n"
+                f"💸 Общий расход: {total_expense:.2f} ₽\n\n"
+                f"🔄 *Новый баланс: {new_balance:.2f} ₽*",
+                parse_mode="Markdown",
+                reply_markup=get_main_keyboard(user_id)
+            )
+            
+        else:
+            # Обработка одной транзакции (старый формат для совместимости)
+            if 'type' not in data or 'amount' not in data or 'category' not in data:
+                raise ValueError("Неполные данные транзакции")
+            
+            tracker.add_transaction(
+                user_id=user_id,
+                transaction_type=data['type'],
+                amount=float(data['amount']),
+                category=data['category'],
+                description=data.get('description', '')
+            )
+            
+            new_balance = tracker.get_user_balance(user_id)
+            
+            transaction_type_text = "Доход" if data['type'] == 'income' else "Расход"
+            await update.message.reply_text(
+                f"✅ {transaction_type_text} добавлен через приложение!\n\n"
+                f"💰 {data['amount']:.2f} ₽\n"
+                f"📂 {data['category']}\n"
+                f"📝 {data.get('description', '')}\n\n"
+                f"🔄 *Новый баланс: {new_balance:.2f} ₽*",
+                parse_mode="Markdown",
+                reply_markup=get_main_keyboard(user_id)
+            )
         
     except Exception as e:
         logger.error(f"Ошибка обработки Web App данных: {e}", exc_info=True)
         await update.message.reply_text("❌ Ошибка при обработке данных приложения")
-
+        
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка сообщений"""
     user_id = update.effective_user.id

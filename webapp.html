@@ -284,6 +284,38 @@
             margin-bottom: 10px;
         }
 
+        .sync-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1.5rem;
+        }
+
+        .sync-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: rotate(180deg);
+        }
+
+        .sync-btn.syncing {
+            animation: rotate 1s linear infinite;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
         @keyframes slideDown {
             from {
                 opacity: 0;
@@ -369,6 +401,9 @@
         </div>
     </div>
 
+    <!-- Кнопка синхронизации -->
+    <div class="sync-btn" id="syncBtn" onclick="syncWithBot()">🔄</div>
+
     <!-- Модальное окно -->
     <div class="modal" id="transactionModal">
         <div class="modal-content">
@@ -406,7 +441,8 @@
 
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
-                <button class="btn btn-primary" id="saveBtn" onclick="saveTransaction()">Сохранить</button>
+                <!-- Убираем onclick из HTML -->
+                <button class="btn btn-primary" id="saveBtn">Сохранить</button>
             </div>
         </div>
     </div>
@@ -414,9 +450,6 @@
     <script>
         // Инициализация Telegram Web App
         console.log('🔧 Проверка доступности Telegram WebApp...');
-        console.log('🔧 window.Telegram:', !!window.Telegram);
-        console.log('🔧 window.Telegram.WebApp:', !!window.Telegram?.WebApp);
-        
         const tg = window.Telegram?.WebApp;
         
         if (!tg) {
@@ -424,18 +457,13 @@
             alert('Откройте приложение через Telegram');
         } else {
             console.log('✅ Telegram WebApp доступен');
-            console.log('🔧 tg object:', tg);
-            console.log('🔧 tg.sendData:', typeof tg.sendData);
-            console.log('🔧 tg.ready:', typeof tg.ready);
-            console.log('🔧 tg.expand:', typeof tg.expand);
-            
             tg.ready();
             tg.expand();
             console.log('✅ WebApp инициализирован');
         }
 
         // Получаем user_id из Telegram
-        const user_id = tg?.initDataUnsafe?.user?.id || 123456; // fallback для тестирования
+        const user_id = tg?.initDataUnsafe?.user?.id || 123456;
         console.log('👤 User ID из Telegram:', user_id);
         
         // Категории расходов
@@ -449,18 +477,30 @@
             monthlyStats: { income: {}, expense: {}, total_income: 0, total_expense: 0 }
         };
 
+        // Очередь транзакций для синхронизации
+        let transactionQueue = [];
+
         // Загрузка данных при запуске
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🚀 DOM полностью загружен');
             loadDataFromURL();
             setupEventListeners();
+            
+            // Загружаем сохраненную очередь из localStorage (если поддерживается)
+            try {
+                const savedQueue = localStorage.getItem('transactionQueue');
+                if (savedQueue) {
+                    transactionQueue = JSON.parse(savedQueue);
+                    console.log('📦 Загружена очередь транзакций:', transactionQueue.length);
+                }
+            } catch (e) {
+                console.log('⚠️ localStorage недоступен');
+            }
         });
 
         // Добавляем обработчик для события перезагрузки страницы
         window.addEventListener('pageshow', function(event) {
             console.log('📄 Событие pageshow, перезагружаем данные...');
-            console.log('🔄 Событие из кэша:', event.persisted);
-            
             setTimeout(() => {
                 loadDataFromURL();
             }, 100);
@@ -473,7 +513,7 @@
             if (saveBtn) {
                 console.log('✅ Кнопка сохранения найдена');
                 
-                saveBtn.removeEventListener('click', saveTransaction);
+                // Используем addEventListener вместо onclick
                 saveBtn.addEventListener('click', function(e) {
                     console.log('🎯 Клик по кнопке сохранения!');
                     e.preventDefault();
@@ -481,24 +521,16 @@
                 });
                 
                 console.log('✅ Обработчик события добавлен');
-            } else {
-                console.error('❌ Кнопка сохранения не найдена!');
             }
             
-            // ✅ ДОБАВЛЯЕМ ОБРАБОТЧИК ДЛЯ ПОЛЯ ВВОДА СУММЫ
+            // Обработчик для поля ввода суммы
             const amountInput = document.getElementById('amount');
             if (amountInput) {
-                // Обработка Enter в поле суммы
                 amountInput.addEventListener('keypress', function(e) {
                     if (e.key === 'Enter') {
                         e.preventDefault();
                         saveTransaction();
                     }
-                });
-                
-                // Дебаг значений при вводе
-                amountInput.addEventListener('input', function(e) {
-                    console.log('🔍 Ввод в поле суммы:', e.target.value);
                 });
                 
                 console.log('✅ Обработчики для поля суммы добавлены');
@@ -509,26 +541,11 @@
             console.log('📥 Загрузка данных из URL...');
             
             const urlParams = new URLSearchParams(window.location.search);
-            console.log('🔗 Все URL параметры:', Object.fromEntries(urlParams));
             
             const balance = parseFloat(urlParams.get('balance')) || 0;
             const income = parseFloat(urlParams.get('income')) || 0;
             const expense = parseFloat(urlParams.get('expense')) || 0;
             const expensesJson = urlParams.get('expenses');
-            const timestamp = urlParams.get('timestamp');
-            const url_user_id = urlParams.get('user_id');
-            
-            console.log('💰 Баланс из URL:', balance);
-            console.log('📈 Доходы из URL:', income);
-            console.log('📉 Расходы из URL:', expense);
-            console.log('⏰ Timestamp URL:', timestamp);
-            console.log('👤 User ID из URL:', url_user_id);
-            
-            userData = {
-                balance: 0,
-                transactions: [],
-                monthlyStats: { income: {}, expense: {}, total_income: 0, total_expense: 0 }
-            };
             
             userData.balance = balance;
             userData.monthlyStats.total_income = income;
@@ -537,33 +554,16 @@
             if (expensesJson && expensesJson !== '{}') {
                 try {
                     userData.monthlyStats.expense = JSON.parse(expensesJson);
-                    console.log('📊 Категории расходов:', userData.monthlyStats.expense);
                 } catch (e) {
                     console.warn('Ошибка парсинга категорий расходов:', e);
                     userData.monthlyStats.expense = {};
                 }
-            } else {
-                userData.monthlyStats.expense = {};
             }
             
-            console.log('📊 Финальные данные после загрузки:', userData);
+            console.log('📊 Данные загружены:', userData);
             
             updateBalance();
             updateStats();
-            
-            if (balance !== 0 || income !== 0 || expense !== 0) {
-                console.log('✅ Данные успешно загружены из URL');
-                if (timestamp) {
-                    const loadTime = new Date(parseInt(timestamp) * 1000).toLocaleTimeString();
-                    console.log(`🕐 Данные актуальны на: ${loadTime}`);
-                }
-            } else {
-                console.log('📝 Нет данных в URL, показываем пустое состояние');
-                if (!user_id) {
-                    document.getElementById('stats-content').innerHTML = 
-                        '<div style="color: orange; text-align: center;">⚠️ Откройте через Telegram бота<br>для загрузки данных</div>';
-                }
-            }
         }
 
         function updateBalance() {
@@ -613,7 +613,6 @@
                 html = '<div style="text-align: center; opacity: 0.7;">Пока нет данных</div>';
             }
             
-            console.log('📊 HTML статистики:', html);
             statsContent.innerHTML = html;
             
             // Добавляем анимацию обновления
@@ -662,6 +661,11 @@
             const saveBtn = document.getElementById('saveBtn');
             saveBtn.disabled = false;
             saveBtn.textContent = 'Сохранить';
+            
+            // Фокусируемся на поле суммы
+            setTimeout(() => {
+                document.getElementById('amount').focus();
+            }, 100);
         }
 
         function selectCategory(category) {
@@ -713,64 +717,33 @@
         }
 
         function saveTransaction() {
-            console.log('🚀🚀🚀 ФУНКЦИЯ saveTransaction ВЫЗВАНА! 🚀🚀🚀');
-            console.log('⏰ Время вызова:', new Date().toISOString());
-            console.log('📍 Начало сохранения транзакции...');
+            console.log('🚀 Сохранение транзакции...');
             
             const amountInput = document.getElementById('amount');
             const description = document.getElementById('description').value;
             const saveBtn = document.getElementById('saveBtn');
             
-            // ✅ ДЕТАЛЬНАЯ ДИАГНОСТИКА СУММЫ
-            console.log('🔍 Значение из поля ввода (RAW):', amountInput.value);
-            console.log('🔍 Тип значения:', typeof amountInput.value);
-            console.log('🔍 Длина строки:', amountInput.value.length);
-            console.log('🔍 После trim():', amountInput.value.trim());
+            const amount = parseFloat(amountInput.value);
             
-            const amountString = amountInput.value.trim();
-            const amount = parseFloat(amountString);
-            
-            console.log('💰 Сумма после parseFloat:', amount);
-            console.log('🔍 Является ли числом:', !isNaN(amount));
-            console.log('🔍 Больше ли нуля:', amount > 0);
-            console.log('📝 Описание:', description);
-            console.log('📊 Тип транзакции:', currentTransactionType);
-            console.log('📂 Выбранная категория:', selectedCategory);
-            
-            // ✅ УЛУЧШЕННАЯ ВАЛИДАЦИЯ СУММЫ
-            if (!amountString || amountString === '') {
-                console.error('❌ Пустое поле суммы');
-                alert('Введите сумму');
-                return;
-            }
-            
-            if (isNaN(amount)) {
-                console.error('❌ Не является числом:', amountString);
-                alert('Введите корректное число');
-                return;
-            }
-            
-            if (amount <= 0) {
-                console.error('❌ Сумма меньше или равна нулю:', amount);
-                alert('Сумма должна быть больше нуля');
+            // Валидация
+            if (!amountInput.value || isNaN(amount) || amount <= 0) {
+                alert('Введите корректную сумму больше нуля');
                 return;
             }
             
             if (amount > 1000000) {
-                console.error('❌ Сумма слишком большая:', amount);
                 alert('Сумма слишком большая (максимум 1,000,000)');
                 return;
             }
             
             if (currentTransactionType === 'expense' && !selectedCategory) {
-                console.error('❌ Категория не выбрана');
                 alert('Выберите категорию расхода');
                 return;
             }
             
             console.log('✅ Все проверки пройдены!');
             
-            // Блокируем кнопку и показываем процесс
+            // Блокируем кнопку
             saveBtn.disabled = true;
             saveBtn.textContent = 'Сохранение...';
             
@@ -778,15 +751,11 @@
                 type: currentTransactionType,
                 amount: amount,
                 category: currentTransactionType === 'income' ? 'Доход' : selectedCategory,
-                description: description
+                description: description,
+                timestamp: Date.now()
             };
             
-            console.log('📦 Подготовленная транзакция для отправки:', transaction);
-            console.log('👤 User ID:', user_id);
-            console.log('🔧 Telegram WebApp доступен:', !!window.Telegram?.WebApp);
-            console.log('🔧 sendData функция доступна:', typeof tg?.sendData);
-            
-            // ✅ СРАЗУ ОБНОВЛЯЕМ ЛОКАЛЬНЫЕ ДАННЫЕ для мгновенного отображения
+            // Обновляем локальные данные
             userData.transactions.push(transaction);
             
             if (currentTransactionType === 'income') {
@@ -801,66 +770,91 @@
                 userData.monthlyStats.expense[selectedCategory] += amount;
             }
             
-            console.log('📊 Обновленные локальные данные:', userData);
-            
-            // ✅ ОБНОВЛЯЕМ ИНТЕРФЕЙС
+            // Обновляем интерфейс
             updateBalance();
             updateStats();
             
-            // ✅ ПОКАЗЫВАЕМ СООБЩЕНИЕ ОБ УСПЕХЕ
+            // Показываем сообщение об успехе
             showSuccessMessage(amount, transaction.category, currentTransactionType);
             
-            // ✅ ОЧИЩАЕМ ФОРМУ (но НЕ закрываем модалку)
+            // Очищаем форму
             clearForm();
             
-            // ✅ ИСПОЛЬЗУЕМ setTimeout ЧТОБЫ НЕ БЛОКИРОВАТЬ UI
-            setTimeout(() => {
-                // Отправляем данные боту через Telegram Web App API
-                try {
-                    console.log('📡 Начинаем отправку данных через tg.sendData...');
-                    const dataToSend = JSON.stringify(transaction);
-                    console.log('📡 Данные для отправки (JSON):', dataToSend);
-                    
-                    // ✅ ПРОВЕРЯЕМ ЧТО TG ДОСТУПЕН
-                    if (!tg) {
-                        console.warn('⚠️ Telegram WebApp недоступен, данные сохранены локально');
-                        return;
-                    }
-                    
-                    if (typeof tg.sendData !== 'function') {
-                        console.warn('⚠️ tg.sendData не доступен, данные сохранены локально');
-                        return;
-                    }
-                    
-                    // ✅ ОТПРАВЛЯЕМ ДАННЫЕ БЕЗ ЗАКРЫТИЯ
-                    tg.sendData(dataToSend);
-                    console.log('✅ sendData вызван успешно');
-                    
-                    // ✅ ДОБАВЛЯЕМ ВИБРАЦИЮ ДЛЯ ОБРАТНОЙ СВЯЗИ
-                    if (tg.HapticFeedback && typeof tg.HapticFeedback.notificationOccurred === 'function') {
-                        tg.HapticFeedback.notificationOccurred('success');
-                    }
-                    
-                    console.log('ℹ️ Транзакция отправлена боту, приложение остается открытым');
-                    
-                } catch (error) {
-                    console.error('💥 Ошибка при отправке данных:', error);
-                    console.error('🔧 Состояние tg:', tg);
-                    console.error('🔧 Доступные методы tg:', Object.keys(tg || {}));
-                    
-                    // ✅ НЕ ПОКАЗЫВАЕМ ПОЛЬЗОВАТЕЛЮ ОШИБКИ ОТПРАВКИ
-                    // Данные уже сохранены локально и отображены
-                    console.log('ℹ️ Ошибка отправки не критична, данные отображены локально');
-                }
-            }, 100); // Небольшая задержка для плавности UI
+            // Добавляем транзакцию в очередь для синхронизации
+            transactionQueue.push(transaction);
+            
+            // Сохраняем очередь в localStorage (если доступен)
+            try {
+                localStorage.setItem('transactionQueue', JSON.stringify(transactionQueue));
+            } catch (e) {
+                console.log('⚠️ Не удалось сохранить в localStorage');
+            }
+            
+            // Показываем индикатор несинхронизированных данных
+            updateSyncButton();
+            
+            // Вибрация для обратной связи
+            if (tg?.HapticFeedback?.notificationOccurred) {
+                tg.HapticFeedback.notificationOccurred('success');
+            }
+            
+            console.log('✅ Транзакция сохранена локально. Очередь:', transactionQueue.length);
         }
 
-        // Обработка закрытия приложения (если пользователь сам захочет закрыть)
-        if (tg) {
-            tg.onEvent('mainButtonClicked', function() {
-                tg.close();
-            });
+        function updateSyncButton() {
+            const syncBtn = document.getElementById('syncBtn');
+            if (transactionQueue.length > 0) {
+                syncBtn.innerHTML = `🔄 <span style="position: absolute; top: 0; right: 0; background: red; color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; display: flex; align-items: center; justify-content: center;">${transactionQueue.length}</span>`;
+            } else {
+                syncBtn.innerHTML = '🔄';
+            }
         }
+
+        // Функция синхронизации с ботом
+        async function syncWithBot() {
+            console.log('🔄 Начинаем синхронизацию с ботом...');
+            
+            const syncBtn = document.getElementById('syncBtn');
+            syncBtn.classList.add('syncing');
+            
+            if (transactionQueue.length === 0) {
+                console.log('📭 Нет транзакций для синхронизации');
+                syncBtn.classList.remove('syncing');
+                return;
+            }
+            
+            // Подготавливаем данные для отправки
+            const dataToSync = {
+                transactions: transactionQueue,
+                user_id: user_id
+            };
+            
+            try {
+                // Отправляем данные через tg.sendData
+                // Это закроет приложение, но бот получит все накопленные транзакции
+                if (tg && typeof tg.sendData === 'function') {
+                    tg.sendData(JSON.stringify(dataToSync));
+                    console.log('✅ Данные отправлены боту');
+                    
+                    // Очищаем очередь
+                    transactionQueue = [];
+                    try {
+                        localStorage.removeItem('transactionQueue');
+                    } catch (e) {}
+                } else {
+                    alert('Синхронизация недоступна. Откройте приложение через Telegram.');
+                }
+            } catch (error) {
+                console.error('❌ Ошибка синхронизации:', error);
+                alert('Ошибка синхронизации. Попробуйте позже.');
+            }
+            
+            syncBtn.classList.remove('syncing');
+            updateSyncButton();
+        }
+
+        // Инициализация при загрузке
+        updateSyncButton();
     </script>
 </body>
 </html>
