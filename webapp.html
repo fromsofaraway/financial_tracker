@@ -168,9 +168,17 @@
         width: 100%;
         height: 100%;
         /* Оставляем только полупрозрачный фон через background-color */
-        background-color: rgba(0, 0, 0, 0.5);
+        background-color: rgba(0, 0, 0, 0.5); /* */
         /* убираем backdrop-filter, т.к. в Telegram он часто не работает */
-        z-index: 1000;
+        z-index: 1000; /* */
+    }
+
+    /* Фолбэк: если backdrop-filter поддерживается, можно добавить слабую размытую прослойку */
+    @supports (backdrop-filter: blur(10px)) {
+        .modal {
+            background-color: rgba(0, 0, 0, 0.3); /* */
+            backdrop-filter: blur(8px); /* */
+        }
     }
 
     /* Фолбэк: если backdrop-filter поддерживается, можно добавить слабую размытую прослойку */
@@ -182,21 +190,25 @@
     }
 
 
-    .modal-content {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(255, 255, 255, 0.15);
-        backdrop-filter: blur(20px);
-        border-radius: 20px;
-        padding: 30px;
-        width: 90%;
-        max-width: 350px;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        /* добавляем relative, чтобы absolute-позиционирование .success-message «привязалось» к modal-content */
-        position: relative;
-    }
+        .modal-content {
+            position: absolute; /* */
+            top: 50%; /* */
+            left: 50%; /* */
+            transform: translate(-50%, -50%); /* */
+            /* MODIFIED: Фон сделан более плотным и темным, чтобы лучше сочетаться с темой
+            и уменьшить проблемы смешивания, если основной backdrop-filter работает некорректно. */
+            background: rgba(60, 50, 85, 0.85); /* Примерный цвет, можно подобрать точнее под вашу палитру */
+            /* REMOVED: backdrop-filter: blur(20px);
+            Это свойство в modal-content часто конфликтует с backdrop-filter родительского .modal,
+            особенно в разных браузерах/веб-вью. */
+            border-radius: 20px; /* */
+            padding: 30px; /* */
+            width: 90%; /* */
+            max-width: 350px; /* */
+            border: 1px solid rgba(255, 255, 255, 0.2); /* */
+            /* Это уже есть в вашем коде и это правильно для позиционирования .success-message */
+            position: relative; /* */
+        }
 
 
         .form-group {
@@ -283,19 +295,22 @@
         }
 
         .success-message {
-            position: absolute;
-            top: 15px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(76, 175, 80, 0.9);
-            border: 1px solid rgba(76, 175, 80, 0.4);
-            border-radius: 10px;
-            padding: 10px 15px;
-            margin: 0;
-            width: calc(100% - 40px);
-            text-align: center;
-            z-index: 1001;
-            opacity: 0; /* скрыто по умолчанию */
+            position: absolute; /* */
+            /* MODIFIED: Скорректировано вертикальное положение.
+            Значение 65px — примерное, чтобы сообщение появилось ниже заголовка H3.
+            Возможно, потребуется небольшая подстройка в зависимости от реальной высоты заголовка. */
+            top: 65px; /* Было top: 15px; */
+            left: 50%; /* */
+            transform: translateX(-50%); /* */
+            background: rgba(76, 175, 80, 0.9); /* */
+            border: 1px solid rgba(76, 175, 80, 0.4); /* */
+            border-radius: 10px; /* */
+            padding: 10px 15px; /* */
+            margin: 0; /* */ /* margin-bottom и так был убран/отсутствовал, это хорошо */
+            width: calc(100% - 40px); /* */
+            text-align: center; /* */
+            z-index: 1001; /* */
+            opacity: 0; /* */ /* Остается для управления анимацией fade-in/out */
         }
 
         /* 2. Ключевые кадры */
