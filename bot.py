@@ -2,6 +2,7 @@ import os
 import sqlite3
 import logging
 import json
+import urllib.parse
 from datetime import datetime, timedelta
 from typing import Dict, Any
 from dotenv import load_dotenv
@@ -192,6 +193,25 @@ def get_main_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
+def get_webapp_url_with_data(user_id: int) -> str:
+    """Создание URL веб-приложения с данными пользователя"""
+    base_url = os.getenv("WEBAPP_URL", "https://your-username.github.io/your-repo-name/webapp.html")
+    
+    # Получаем данные пользователя
+    user_stats = tracker.get_user_stats(user_id)
+    
+    # Кодируем данные в URL
+    import urllib.parse
+    data = {
+        'balance': user_stats['balance'],
+        'income': user_stats['monthlyStats']['total_income'],
+        'expense': user_stats['monthlyStats']['total_expense'],
+        'expenses': json.dumps(user_stats['monthlyStats']['expense'])
+    }
+    
+    query_string = urllib.parse.urlencode(data)
+    return f"{base_url}?{query_string}"
+
 def get_category_keyboard(transaction_type: str):
     """Клавиатура с категориями расходов"""
     categories = EXPENSE_CATEGORIES
@@ -250,38 +270,28 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
 async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда синхронизации данных для веб-приложения"""
+    """Команда для обновления ссылки на веб-приложение с актуальными данными"""
     user_id = update.effective_user.id
     
-    logger.info(f"Команда синхронизации для пользователя {user_id}")
+    logger.info(f"Команда обновления веб-приложения для пользователя {user_id}")
     
     try:
-        user_stats = tracker.get_user_stats(user_id)
+        # Создаем inline кнопку с актуальными данными
+        webapp_url = get_webapp_url_with_data(user_id)
         
-        stats_text = "🔄 *Синхронизация данных*\n\n"
-        stats_text += f"💰 *Текущий баланс:* {user_stats['balance']:.2f} ₽\n\n"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 Открыть приложение с данными", web_app=WebAppInfo(url=webapp_url))]
+        ])
         
-        if user_stats['monthlyStats']['total_income'] > 0:
-            stats_text += f"📈 *Доходы за месяц:* {user_stats['monthlyStats']['total_income']:.2f} ₽\n"
-        
-        if user_stats['monthlyStats']['total_expense'] > 0:
-            stats_text += f"📉 *Расходы за месяц:* {user_stats['monthlyStats']['total_expense']:.2f} ₽\n"
-            for category, amount in user_stats['monthlyStats']['expense'].items():
-                stats_text += f"　• {category}: {amount:.2f} ₽\n"
-        
-        if len(user_stats['recentTransactions']) > 0:
-            stats_text += f"\n📝 *Последние транзакции:*\n"
-            for transaction in user_stats['recentTransactions'][:5]:
-                icon = "💰" if transaction['type'] == 'income' else "💸"
-                stats_text += f"{icon} {transaction['amount']:.2f} ₽ - {transaction['category']}\n"
-        
-        stats_text += f"\n✅ *Данные актуальны на {datetime.now().strftime('%d.%m.%Y %H:%M')}*"
-        
-        await update.message.reply_text(stats_text, parse_mode="Markdown")
+        await update.message.reply_text(
+            "🔄 *Веб-приложение обновлено*\n\nНажмите кнопку ниже для открытия приложения с актуальными данными:",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
         
     except Exception as e:
-        logger.error(f"Ошибка синхронизации для пользователя {user_id}: {e}")
-        await update.message.reply_text("❌ Ошибка при получении данных")
+        logger.error(f"Ошибка обновления веб-приложения для пользователя {user_id}: {e}")
+        await update.message.reply_text("❌ Ошибка при обновлении приложения")
 
 async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка данных из Web App"""

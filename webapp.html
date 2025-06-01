@@ -304,14 +304,6 @@
             </div>
         </div>
 
-        <div class="actions" style="grid-template-columns: 1fr; margin-bottom: 20px;">
-            <div class="action-btn" style="background: rgba(76, 175, 80, 0.2); border-left: 4px solid #4CAF50;" onclick="syncData()">
-                <div class="action-icon">🔄</div>
-                <div class="action-title">Синхронизировать данные</div>
-                <div class="action-subtitle">Загрузить из бота</div>
-            </div>
-        </div>
-
         <div class="stats-card">
             <div class="stats-title">📈 Статистика за месяц</div>
             <div id="stats-content" class="loading">Загружаем данные...</div>
@@ -356,19 +348,12 @@
         console.log('🔍 Parsed данные:', tg.initDataUnsafe);
         
         const user_id = tg.initDataUnsafe?.user?.id;
-        
         console.log('👤 User ID из Telegram:', user_id);
         
-        if (!user_id) {
-            console.warn('⚠️ User ID не найден, используем fallback');
-            // Для тестирования покажем сообщение
-            document.getElementById('stats-content').innerHTML = 
-                '<div style="color: orange;">⚠️ Откройте через Telegram бота для синхронизации данных</div>';
-        }
+        // Получаем данные из URL параметров
+        const urlParams = new URLSearchParams(window.location.search);
+        console.log('🔗 URL параметры:', Object.fromEntries(urlParams));
         
-        // Отключаем API вызовы - будем работать через sendData
-        const USE_API = false; // Переключатель для тестирования
-
         // Категории расходов
         const EXPENSE_CATEGORIES = ["Кофе", "Заведение", "Одежда", "Косметика", "Транспорт", "Здоровье"];
         
@@ -382,16 +367,50 @@
 
         // Загрузка данных при запуске
         document.addEventListener('DOMContentLoaded', function() {
-            // Показываем начальное состояние
+            loadDataFromURL();
+        });
+
+        function loadDataFromURL() {
+            console.log('📥 Загрузка данных из URL...');
+            
+            // Читаем данные из URL параметров
+            const balance = parseFloat(urlParams.get('balance')) || 0;
+            const income = parseFloat(urlParams.get('income')) || 0;
+            const expense = parseFloat(urlParams.get('expense')) || 0;
+            const expensesJson = urlParams.get('expenses');
+            
+            console.log('💰 Баланс из URL:', balance);
+            console.log('📈 Доходы из URL:', income);
+            console.log('📉 Расходы из URL:', expense);
+            
+            // Обновляем данные
+            userData.balance = balance;
+            userData.monthlyStats.total_income = income;
+            userData.monthlyStats.total_expense = expense;
+            
+            if (expensesJson) {
+                try {
+                    userData.monthlyStats.expense = JSON.parse(expensesJson);
+                    console.log('📊 Категории расходов:', userData.monthlyStats.expense);
+                } catch (e) {
+                    console.warn('Ошибка парсинга категорий расходов:', e);
+                }
+            }
+            
             updateBalance();
             updateStats();
             
-            // Показываем инструкцию если нет user_id
-            if (!user_id) {
-                document.getElementById('stats-content').innerHTML = 
-                    '<div style="color: orange; text-align: center;">⚠️ Откройте через Telegram бота<br>для синхронизации данных</div>';
+            // Показываем сообщение о загрузке данных
+            if (balance !== 0 || income !== 0 || expense !== 0) {
+                console.log('✅ Данные успешно загружены из URL');
+            } else {
+                console.log('📝 Нет данных в URL, показываем пустое состояние');
+                if (!user_id) {
+                    document.getElementById('stats-content').innerHTML = 
+                        '<div style="color: orange; text-align: center;">⚠️ Откройте через Telegram бота<br>для загрузки данных</div>';
+                }
             }
-        });
+        }
 
         async function saveTransactionToAPI(transaction) {
             console.log('💾 Сохранение транзакции через API:', transaction);
