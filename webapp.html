@@ -393,10 +393,24 @@
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🚀 DOM полностью загружен');
             
+            // Принудительная очистка кэша
+            console.log('🧹 Очистка кэша...');
+            
             loadDataFromURL();
             
             // Принудительно привязываем события к кнопкам
             setupEventListeners();
+        });
+
+        // Добавляем обработчик для события перезагрузки страницы
+        window.addEventListener('pageshow', function(event) {
+            console.log('📄 Событие pageshow, перезагружаем данные...');
+            console.log('🔄 Событие из кэша:', event.persisted);
+            
+            // Принудительно перезагружаем данные
+            setTimeout(() => {
+                loadDataFromURL();
+            }, 100);
         });
 
         function setupEventListeners() {
@@ -432,29 +446,49 @@
         function loadDataFromURL() {
             console.log('📥 Загрузка данных из URL...');
             
+            // Принудительно перезагружаем URL параметры (для борьбы с кэшем)
+            const urlParams = new URLSearchParams(window.location.search);
+            console.log('🔗 Все URL параметры:', Object.fromEntries(urlParams));
+            
             // Читаем данные из URL параметров
             const balance = parseFloat(urlParams.get('balance')) || 0;
             const income = parseFloat(urlParams.get('income')) || 0;
             const expense = parseFloat(urlParams.get('expense')) || 0;
             const expensesJson = urlParams.get('expenses');
+            const timestamp = urlParams.get('timestamp');
+            const url_user_id = urlParams.get('user_id');
             
             console.log('💰 Баланс из URL:', balance);
             console.log('📈 Доходы из URL:', income);
             console.log('📉 Расходы из URL:', expense);
+            console.log('⏰ Timestamp URL:', timestamp);
+            console.log('👤 User ID из URL:', url_user_id);
+            
+            // Очищаем старые данные перед загрузкой новых
+            userData = {
+                balance: 0,
+                transactions: [],
+                monthlyStats: { income: {}, expense: {}, total_income: 0, total_expense: 0 }
+            };
             
             // Обновляем данные
             userData.balance = balance;
             userData.monthlyStats.total_income = income;
             userData.monthlyStats.total_expense = expense;
             
-            if (expensesJson) {
+            if (expensesJson && expensesJson !== '{}') {
                 try {
                     userData.monthlyStats.expense = JSON.parse(expensesJson);
                     console.log('📊 Категории расходов:', userData.monthlyStats.expense);
                 } catch (e) {
                     console.warn('Ошибка парсинга категорий расходов:', e);
+                    userData.monthlyStats.expense = {};
                 }
+            } else {
+                userData.monthlyStats.expense = {};
             }
+            
+            console.log('📊 Финальные данные после загрузки:', userData);
             
             updateBalance();
             updateStats();
@@ -462,6 +496,10 @@
             // Показываем сообщение о загрузке данных
             if (balance !== 0 || income !== 0 || expense !== 0) {
                 console.log('✅ Данные успешно загружены из URL');
+                if (timestamp) {
+                    const loadTime = new Date(parseInt(timestamp) * 1000).toLocaleTimeString();
+                    console.log(`🕐 Данные актуальны на: ${loadTime}`);
+                }
             } else {
                 console.log('📝 Нет данных в URL, показываем пустое состояние');
                 if (!user_id) {

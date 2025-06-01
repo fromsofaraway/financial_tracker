@@ -225,18 +225,21 @@ def get_webapp_url_with_data(user_id: int) -> str:
         total_expense = monthly_stats.get('total_expense', 0)
         expense_categories = monthly_stats.get('expense', {})
         
-        # Кодируем данные в URL
+        # Кодируем данные в URL с уникальным параметром для предотвращения кэширования
+        import time
         data = {
             'balance': balance,
             'income': total_income,
             'expense': total_expense,
-            'expenses': json.dumps(expense_categories)
+            'expenses': json.dumps(expense_categories),
+            'timestamp': int(time.time()),  # Уникальный параметр для предотвращения кэша
+            'user_id': user_id  # Добавляем user_id для дополнительной уникальности
         }
         
         query_string = urllib.parse.urlencode(data)
         final_url = f"{base_url}?{query_string}"
         
-        logger.info(f"Создан URL: {final_url}")
+        logger.info(f"Создан уникальный URL: {final_url}")
         return final_url
         
     except Exception as e:
@@ -454,7 +457,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_states[user_id] = {"state": "main"}
         await update.message.reply_text(
             "Главное меню:",
-            reply_markup=get_main_keyboard()
+            reply_markup=get_dynamic_keyboard(user_id)  # Обновляем с актуальными данными
         )
         return
     
