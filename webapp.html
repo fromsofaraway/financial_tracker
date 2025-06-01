@@ -308,6 +308,13 @@
             <div class="stats-title">📈 Статистика за месяц</div>
             <div id="stats-content" class="loading">Загружаем данные...</div>
         </div>
+
+        <!-- Тестовая кнопка для отладки -->
+        <div style="text-align: center; margin: 20px;">
+            <button onclick="testSaveFunction()" style="background: red; color: white; padding: 10px; border: none; border-radius: 5px;">
+                🧪 ТЕСТ: Вызвать saveTransaction
+            </button>
+        </div>
     </div>
 
     <!-- Модальное окно -->
@@ -332,7 +339,7 @@
 
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
-                <button class="btn btn-primary" onclick="saveTransaction()">Сохранить</button>
+                <button class="btn btn-primary" id="saveBtn" onclick="saveTransaction()">Сохранить</button>
             </div>
         </div>
     </div>
@@ -384,8 +391,43 @@
 
         // Загрузка данных при запуске
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 DOM полностью загружен');
+            
             loadDataFromURL();
+            
+            // Принудительно привязываем события к кнопкам
+            setupEventListeners();
         });
+
+        function setupEventListeners() {
+            console.log('🔧 Настройка обработчиков событий...');
+            
+            // Находим кнопку сохранения и привязываем событие
+            const saveBtn = document.getElementById('saveBtn');
+            if (saveBtn) {
+                console.log('✅ Кнопка сохранения найдена');
+                
+                // Удаляем старые обработчики и добавляем новый
+                saveBtn.removeEventListener('click', saveTransaction);
+                saveBtn.addEventListener('click', function(e) {
+                    console.log('🎯 Клик по кнопке сохранения!');
+                    e.preventDefault();
+                    saveTransaction();
+                });
+                
+                console.log('✅ Обработчик события добавлен');
+            } else {
+                console.error('❌ Кнопка сохранения не найдена!');
+            }
+            
+            // Тест функции
+            console.log('🧪 Тестируем функцию saveTransaction...');
+            if (typeof saveTransaction === 'function') {
+                console.log('✅ Функция saveTransaction определена');
+            } else {
+                console.error('❌ Функция saveTransaction НЕ определена!');
+            }
+        }
 
         function loadDataFromURL() {
             console.log('📥 Загрузка данных из URL...');
@@ -426,52 +468,6 @@
                     document.getElementById('stats-content').innerHTML = 
                         '<div style="color: orange; text-align: center;">⚠️ Откройте через Telegram бота<br>для загрузки данных</div>';
                 }
-            }
-        }
-
-        async function saveTransactionToAPI(transaction) {
-            console.log('💾 Сохранение транзакции через API:', transaction);
-            console.log('👤 User ID для сохранения:', user_id);
-            
-            try {
-                const url = `${API_BASE}/add-transaction`;
-                const payload = {
-                    user_id: user_id,
-                    ...transaction
-                };
-                
-                console.log('📡 Отправляем транзакцию:', url, payload);
-                
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(payload)
-                });
-                
-                console.log('📥 Ответ на сохранение:', response.status, response.statusText);
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    console.log('✅ Транзакция сохранена:', result);
-                    
-                    // Обновляем данные из ответа API
-                    if (result.data) {
-                        userData.balance = result.data.balance;
-                        userData.monthlyStats = result.data.monthlyStats;
-                        userData.transactions = result.data.recentTransactions || [];
-                        console.log('📊 Данные обновлены из API:', userData);
-                    }
-                    return true;
-                } else {
-                    const errorText = await response.text();
-                    console.error('❌ Ошибка сохранения:', response.status, errorText);
-                    return false;
-                }
-            } catch (error) {
-                console.error('💥 Ошибка соединения при сохранении:', error);
-                return false;
             }
         }
 
@@ -563,104 +559,120 @@
             document.getElementById('transactionModal').style.display = 'none';
         }
 
-        async function saveTransaction() {
+        function testSaveFunction() {
+            console.log('🧪 ТЕСТОВАЯ ФУНКЦИЯ ВЫЗВАНА!');
+            
+            // Заполняем тестовые данные
+            document.getElementById('amount').value = '100';
+            document.getElementById('description').value = 'Тест';
+            currentTransactionType = 'expense';
+            selectedCategory = 'Кофе';
+            
+            console.log('🧪 Тестовые данные установлены, вызываем saveTransaction...');
+            saveTransaction();
+        }
+
+        function saveTransaction() {
+            console.log('🚀🚀🚀 ФУНКЦИЯ saveTransaction ВЫЗВАНА! 🚀🚀🚀');
+            console.log('⏰ Время вызова:', new Date().toISOString());
+            console.log('📍 Начало сохранения транзакции...');
+            
             const amount = parseFloat(document.getElementById('amount').value);
             const description = document.getElementById('description').value;
             
+            console.log('💰 Сумма:', amount);
+            console.log('📝 Описание:', description);
+            console.log('📊 Тип транзакции:', currentTransactionType);
+            console.log('📂 Выбранная категория:', selectedCategory);
+            
             if (!amount || amount <= 0) {
+                console.error('❌ Некорректная сумма');
                 tg.showAlert('Введите корректную сумму');
                 return;
             }
             
             if (currentTransactionType === 'expense' && !selectedCategory) {
+                console.error('❌ Категория не выбрана');
                 tg.showAlert('Выберите категорию');
                 return;
             }
             
-            // Создаем транзакцию
+            // Создаем транзакцию для отправки боту
             const transaction = {
                 type: currentTransactionType,
                 amount: amount,
                 category: currentTransactionType === 'income' ? 'Доход' : selectedCategory,
-                description: description,
-                date: new Date().toISOString()
+                description: description
             };
             
-            // Показываем загрузку
-            const saveBtn = document.querySelector('.btn-primary');
-            const originalText = saveBtn.textContent;
-            saveBtn.textContent = 'Сохранение...';
-            saveBtn.disabled = true;
+            console.log('📦 Подготовленная транзакция для отправки:', transaction);
+            console.log('👤 User ID:', user_id);
+            console.log('🔧 Telegram WebApp доступен:', !!window.Telegram?.WebApp);
+            console.log('🔧 sendData функция доступна:', typeof tg.sendData);
             
-            // Сохраняем через API
-            const success = await saveTransactionToAPI(transaction);
+            // Обновляем локальные данные для мгновенного отображения
+            userData.transactions.push(transaction);
             
-            if (success) {
-                // Обновляем интерфейс
-                updateBalance();
-                updateStats();
-                closeModal();
+            if (currentTransactionType === 'income') {
+                userData.balance += amount;
+                userData.monthlyStats.total_income += amount;
+            } else {
+                userData.balance -= amount;
+                userData.monthlyStats.total_expense += amount;
+                if (!userData.monthlyStats.expense[selectedCategory]) {
+                    userData.monthlyStats.expense[selectedCategory] = 0;
+                }
+                userData.monthlyStats.expense[selectedCategory] += amount;
+            }
+            
+            console.log('📊 Обновленные локальные данные:', userData);
+            
+            updateBalance();
+            updateStats();
+            closeModal();
+            
+            // Отправляем данные боту через Telegram Web App API
+            try {
+                console.log('📡 Начинаем отправку данных через tg.sendData...');
+                const dataToSend = JSON.stringify(transaction);
+                console.log('📡 Данные для отправки (JSON):', dataToSend);
+                
+                // Проверяем, что функция доступна
+                if (typeof tg.sendData !== 'function') {
+                    throw new Error('tg.sendData не является функцией');
+                }
+                
+                tg.sendData(dataToSend);
+                console.log('✅ sendData вызван успешно');
                 
                 // Показываем уведомление
                 tg.showAlert(`${currentTransactionType === 'income' ? 'Доход' : 'Расход'} добавлен: ${amount} ₽`);
-            } else {
-                // Если API недоступен, обновляем локально
-                userData.transactions.push(transaction);
                 
-                if (currentTransactionType === 'income') {
-                    userData.balance += amount;
-                    userData.monthlyStats.total_income += amount;
-                } else {
-                    userData.balance -= amount;
-                    userData.monthlyStats.total_expense += amount;
-                    if (!userData.monthlyStats.expense[selectedCategory]) {
-                        userData.monthlyStats.expense[selectedCategory] = 0;
+                // Попробуем закрыть приложение через небольшую задержку
+                setTimeout(() => {
+                    console.log('🔄 Пытаемся закрыть WebApp...');
+                    if (typeof tg.close === 'function') {
+                        tg.close();
                     }
-                    userData.monthlyStats.expense[selectedCategory] += amount;
-                }
+                }, 1000);
                 
-                updateBalance();
-                updateStats();
-                closeModal();
+            } catch (error) {
+                console.error('💥 Ошибка при отправке данных:', error);
                 
-                tg.showAlert(`${currentTransactionType === 'income' ? 'Доход' : 'Расход'} добавлен локально: ${amount} ₽`);
+                // Показываем детальную информацию об ошибке
+                console.error('🔧 Состояние tg:', tg);
+                console.error('🔧 Доступные методы tg:', Object.keys(tg || {}));
+                
+                tg.showAlert('Ошибка при отправке данных боту: ' + error.message);
             }
-            
-            // Восстанавливаем кнопку
-            saveBtn.textContent = originalText;
-            saveBtn.disabled = false;
-        }
-
-        function syncData() {
-            console.log('🔄 Запуск синхронизации данных...');
-            
-            if (!user_id) {
-                tg.showAlert('Откройте приложение через Telegram бота');
-                return;
-            }
-            
-            // Показываем, что синхронизация запущена
-            const syncBtn = document.querySelector('.action-btn[onclick="syncData()"]');
-            const originalHTML = syncBtn.innerHTML;
-            syncBtn.innerHTML = `
-                <div class="action-icon">⏳</div>
-                <div class="action-title">Синхронизация...</div>
-                <div class="action-subtitle">Загружаем данные</div>
-            `;
-            
-            // Отправляем запрос на синхронизацию
-            requestDataFromBot();
-            
-            // Восстанавливаем кнопку через 2 секунды
-            setTimeout(() => {
-                syncBtn.innerHTML = originalHTML;
-            }, 2000);
         }
 
         // Обработка закрытия приложения
-        tg.onEvent('mainButtonClicked', function() {
-            tg.close();
-        });
+        if (tg) {
+            tg.onEvent('mainButtonClicked', function() {
+                tg.close();
+            });
+        }
     </script>
 </body>
 </html>
