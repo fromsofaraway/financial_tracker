@@ -3,12 +3,13 @@ import sqlite3
 import logging
 import json
 import urllib.parse
+import time
+import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Any
 from dotenv import load_dotenv
-from aiohttp import web, web_request
+from aiohttp import web
 import aiohttp_cors
-from aiohttp.web import Application as WebApplication
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -180,19 +181,24 @@ EXPENSE_CATEGORIES = ["Кофе", "Заведение", "Одежда", "Кос�
 # Состояния пользователей
 user_states = {}
 
-def get_main_keyboard():
-    """Главная клавиатура с Web App (автоматически с данными)"""
-    keyboard = [
-        [KeyboardButton("🚀 Открыть приложение", web_app=WebAppInfo(url=""))],  # URL будет динамический
-        [KeyboardButton("📊 Баланс"), KeyboardButton("📈 Статистика")],
-        [KeyboardButton("💰 Добавить доход"), KeyboardButton("💸 Добавить расход")],
-        [KeyboardButton("❓ Помощь")]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-def get_dynamic_keyboard(user_id: int):
-    """Клавиатура с динамической ссылкой на веб-приложение"""
+def get_main_keyboard(user_id: int):
+    """Главная клавиатура с веб-приложением - ВСЕГДА с актуальными данными"""
+    # КАЖДЫЙ РАЗ при создании клавиатуры генерируем свежий URL
     webapp_url = get_webapp_url_with_data(user_id)
+    
+    # ПОДРОБНОЕ логирование для отладки
+    logger.info(f"🔧 Создание клавиатуры для пользователя {user_id}")
+    logger.info(f"🌐 Сгенерированный URL: {webapp_url}")
+    
+    # Парсим URL для проверки
+    from urllib.parse import urlparse, parse_qs
+    parsed = urlparse(webapp_url)
+    params = parse_qs(parsed.query)
+    
+    logger.info(f"💰 Баланс в URL: {params.get('balance', ['не найден'])[0]}")
+    logger.info(f"📈 Доходы в URL: {params.get('income', ['не найден'])[0]}")
+    logger.info(f"📉 Расходы в URL: {params.get('expense', ['не найден'])[0]}")
+    logger.info(f"⏰ Timestamp в URL: {params.get('timestamp', ['не найден'])[0]}")
     
     keyboard = [
         [KeyboardButton("🚀 Открыть приложение", web_app=WebAppInfo(url=webapp_url))],
@@ -201,6 +207,10 @@ def get_dynamic_keyboard(user_id: int):
         [KeyboardButton("❓ Помощь")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_webapp_keyboard(user_id: int):
+    """Устаревшая функция - используем get_main_keyboard"""
+    return get_main_keyboard(user_id)
 
 def get_webapp_url_with_data(user_id: int) -> str:
     """Создание URL веб-приложения с данными пользователя"""
@@ -226,7 +236,6 @@ def get_webapp_url_with_data(user_id: int) -> str:
         expense_categories = monthly_stats.get('expense', {})
         
         # Кодируем данные в URL с уникальным параметром для предотвращения кэширования
-        import time
         data = {
             'balance': balance,
             'income': total_income,
@@ -276,7 +285,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         welcome_text,
         parse_mode="Markdown",
-        reply_markup=get_dynamic_keyboard(user_id)  # Автоматически с актуальными данными
+        reply_markup=get_main_keyboard(user_id)  # Сразу с актуальными данными!
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -304,6 +313,21 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
+async def refresh_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда для обновления веб-приложения с актуальными данными"""
+    user_id = update.effective_user.id
+    
+    logger.info(f"Команда /refresh для пользователя {user_id}")
+    
+    user_stats = tracker.get_user_stats(user_id)
+    balance = user_stats.get('balance', 0)
+    
+    await update.message.reply_text(
+        f"🔄 *Данные обновлены через команду!*\n\n💰 Актуальный баланс: *{balance:.2f} ₽*",
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard(user_id)
+    )
+
 async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка данных из Web App"""
     try:
@@ -321,79 +345,52 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
             description=data.get('description', '')
         )
         
+        # Получаем обновленный баланс
+        new_balance = tracker.get_user_balance(user_id)
+        
         transaction_type_text = "Доход" if data['type'] == 'income' else "Расход"
         await update.message.reply_text(
             f"✅ {transaction_type_text} добавлен через приложение!\n\n"
             f"💰 {data['amount']:.2f} ₽\n"
             f"📂 {data['category']}\n"
-            f"📝 {data.get('description', '')}",
-            reply_markup=get_dynamic_keyboard(user_id)  # Обновляем клавиатуру с новыми данными
+            f"📝 {data.get('description', '')}\n\n"
+            f"🔄 *Новый баланс: {new_balance:.2f} ₽*",
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard(user_id)  # Обновленные данные
         )
         
     except Exception as e:
         logger.error(f"Ошибка обработки Web App данных: {e}", exc_info=True)
         await update.message.reply_text("❌ Ошибка при обработке данных приложения")
 
-# API обработчики для веб-приложения
-async def api_get_user_data(request):
-    """API для получения данных пользователя"""
+# Простой API для поллинга
+async def api_get_balance(request):
+    """Простой API для получения баланса"""
     try:
-        logger.info(f"API запрос get_user_data: {request.query}")
-        
-        # Получаем user_id из параметров запроса
         user_id = request.query.get('user_id')
         if not user_id:
-            logger.warning("API запрос без user_id")
             return web.json_response({'error': 'user_id required'}, status=400)
         
         user_id = int(user_id)
-        logger.info(f"Обработка запроса данных для пользователя {user_id}")
+        user_stats = tracker.get_user_stats(user_id)
         
-        user_data = tracker.get_user_stats(user_id)
+        logger.info(f"API запрос баланса для пользователя {user_id}: {user_stats['balance']}")
         
-        logger.info(f"Возвращаем данные пользователя {user_id}: {user_data}")
-        return web.json_response(user_data)
-        
-    except Exception as e:
-        logger.error(f"Ошибка API get_user_data: {e}", exc_info=True)
-        return web.json_response({'error': 'Internal server error'}, status=500)
-
-async def api_add_transaction(request):
-    """API для добавления транзакции"""
-    try:
-        logger.info("API запрос add_transaction")
-        data = await request.json()
-        logger.info(f"Данные транзакции: {data}")
-        
-        user_id = data.get('user_id')
-        transaction_type = data.get('type')
-        amount = float(data.get('amount'))
-        category = data.get('category')
-        description = data.get('description', '')
-        
-        if not all([user_id, transaction_type, amount, category]):
-            logger.warning(f"Неполные данные транзакции: {data}")
-            return web.json_response({'error': 'Missing required fields'}, status=400)
-        
-        logger.info(f"Добавление транзакции через API для пользователя {user_id}")
-        tracker.add_transaction(user_id, transaction_type, amount, category, description)
-        
-        # Возвращаем обновленные данные
-        user_data = tracker.get_user_stats(user_id)
-        logger.info(f"Транзакция добавлена, возвращаем обновленные данные")
-        return web.json_response({'success': True, 'data': user_data})
+        return web.json_response({
+            'balance': user_stats['balance'],
+            'monthlyStats': user_stats['monthlyStats'],
+            'timestamp': int(time.time())
+        })
         
     except Exception as e:
-        logger.error(f"Ошибка API add_transaction: {e}", exc_info=True)
-        return web.json_response({'error': 'Internal server error'}, status=500)
+        logger.error(f"Ошибка API get_balance: {e}")
+        return web.json_response({'error': str(e)}, status=500)
 
-async def create_web_app():
-    """Создание веб-приложения для API"""
-    logger.info("Создание веб-приложения для API")
+async def create_api_server():
+    """Создание простого API сервера"""
+    app = web.Application()
     
-    app = WebApplication()
-    
-    # Настройка CORS
+    # CORS для доступа с GitHub Pages
     cors = aiohttp_cors.setup(app, defaults={
         "*": aiohttp_cors.ResourceOptions(
             allow_credentials=True,
@@ -403,22 +400,13 @@ async def create_web_app():
         )
     })
     
-    # API маршруты
-    app.router.add_get('/api/user-data', api_get_user_data)
-    app.router.add_post('/api/add-transaction', api_add_transaction)
+    # API маршрут
+    app.router.add_get('/api/balance', api_get_balance)
     
-    # Добавляем простой тестовый роут
-    async def health_check(request):
-        logger.info("Health check запрос")
-        return web.json_response({'status': 'ok', 'message': 'API работает'})
-    
-    app.router.add_get('/health', health_check)
-    
-    # Добавляем CORS для всех маршрутов
+    # Добавляем CORS
     for route in list(app.router.routes()):
         cors.add(route)
     
-    logger.info("Веб-приложение создано")
     return app
     """Команда помощи"""
     help_text = """
@@ -457,7 +445,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_states[user_id] = {"state": "main"}
         await update.message.reply_text(
             "Главное меню:",
-            reply_markup=get_dynamic_keyboard(user_id)  # Обновляем с актуальными данными
+            reply_markup=get_main_keyboard(user_id)  # С актуальными данными
         )
         return
     
@@ -540,10 +528,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             tracker.add_transaction(user_id, "income", amount, "Доход", description)
             
+            # Проверяем новый баланс
+            new_balance = tracker.get_user_balance(user_id)
+            logger.info(f"🔄 После добавления дохода: новый баланс = {new_balance}")
+            
             await update.message.reply_text(
                 f"✅ Доход добавлен!\n\n💰 *{amount:.2f} ₽*\n📝 {description}",
                 parse_mode="Markdown",
-                reply_markup=get_dynamic_keyboard(user_id)  # Обновляем с новыми данными
+                reply_markup=get_main_keyboard(user_id)  # Обновленные данные
             )
             user_states[user_id] = {"state": "main"}
             
@@ -567,7 +559,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"✅ Расход добавлен!\n\n💸 *{amount:.2f} ₽*\n📂 {category}\n📝 {description}",
                 parse_mode="Markdown",
-                reply_markup=get_dynamic_keyboard(user_id)  # Обновляем с новыми данными
+                reply_markup=get_main_keyboard(user_id)  # Обновленные данные
             )
             user_states[user_id] = {"state": "main"}
             
@@ -604,42 +596,42 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.error(f"Ошибка обработки Web App данных: {e}")
         await update.message.reply_text("❌ Ошибка при сохранении данных")
 
-import asyncio
-
 def main():
-    """Запуск бота"""
+    """Запуск бота с API сервером"""
     if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
         print("❌ Ошибка: Токен бота не найден!")
         print("📝 Создайте файл .env и добавьте: BOT_TOKEN=ваш_токен_от_BotFather")
         return
     
-    async def start_bot_and_server():
-        # Создаем и запускаем API сервер
-        web_app = await create_web_app()
-        runner = web.AppRunner(web_app)
+    async def start_bot_and_api():
+        # Запускаем API сервер
+        app = await create_api_server()
+        runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, 'localhost', 8080)
         await site.start()
         print("🌐 API сервер запущен на http://localhost:8080")
         
-        # Создаем и запускаем бота
+        # Запускаем бота
+        print("🤖 Инициализация бота...")
         application = Application.builder().token(BOT_TOKEN).build()
         
         # Добавление обработчиков
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("refresh", refresh_command))
         application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_handler(MessageHandler(filters.TEXT, handle_message))
         
         print("🤖 Бот запущен!")
         print(f"📁 База данных: {DATABASE_PATH}")
+        print("📨 Ожидание сообщений...")
         
         # Запускаем бота
         await application.initialize()
         await application.start()
         await application.updater.start_polling()
         
-        # Ждем бесконечно
         try:
             await asyncio.Future()  # Ждем вечно
         except KeyboardInterrupt:
@@ -651,7 +643,7 @@ def main():
             await runner.cleanup()
     
     # Запускаем все
-    asyncio.run(start_bot_and_server())
+    asyncio.run(start_bot_and_api())
 
 if __name__ == "__main__":
     main()

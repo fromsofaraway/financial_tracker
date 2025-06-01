@@ -309,13 +309,13 @@
             <div id="stats-content" class="loading">Загружаем данные...</div>
         </div>
 
-        <!-- Тестовая кнопка для отладки -->
+        <!-- Тестовая кнопка для отладки
         <div style="text-align: center; margin: 20px;">
             <button onclick="testSaveFunction()" style="background: red; color: white; padding: 10px; border: none; border-radius: 5px;">
                 🧪 ТЕСТ: Вызвать saveTransaction
             </button>
         </div>
-    </div>
+    </div> -->
 
     <!-- Модальное окно -->
     <div class="modal" id="transactionModal">
@@ -367,14 +367,14 @@
             console.log('✅ WebApp инициализирован');
         }
 
-        // Получаем данные пользователя из Telegram
-        console.log('🔍 Telegram Web App данные:', tg?.initData);
-        console.log('🔍 Parsed данные:', tg?.initDataUnsafe);
-        
-        const user_id = tg?.initDataUnsafe?.user?.id;
+        // Получаем user_id из Telegram
+        const user_id = tg?.initDataUnsafe?.user?.id || 123456; // fallback для тестирования
         console.log('👤 User ID из Telegram:', user_id);
         
-        // Получаем данные из URL параметров
+        // API для поллинга
+        const API_BASE_URL = 'http://localhost:8080/api';
+        
+        // Получаем данные из URL параметров (первоначальная загрузка)
         const urlParams = new URLSearchParams(window.location.search);
         console.log('🔗 URL параметры:', Object.fromEntries(urlParams));
         
