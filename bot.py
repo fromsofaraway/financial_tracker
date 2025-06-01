@@ -249,6 +249,40 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
+async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда синхронизации данных для веб-приложения"""
+    user_id = update.effective_user.id
+    
+    logger.info(f"Команда синхронизации для пользователя {user_id}")
+    
+    try:
+        user_stats = tracker.get_user_stats(user_id)
+        
+        stats_text = "🔄 *Синхронизация данных*\n\n"
+        stats_text += f"💰 *Текущий баланс:* {user_stats['balance']:.2f} ₽\n\n"
+        
+        if user_stats['monthlyStats']['total_income'] > 0:
+            stats_text += f"📈 *Доходы за месяц:* {user_stats['monthlyStats']['total_income']:.2f} ₽\n"
+        
+        if user_stats['monthlyStats']['total_expense'] > 0:
+            stats_text += f"📉 *Расходы за месяц:* {user_stats['monthlyStats']['total_expense']:.2f} ₽\n"
+            for category, amount in user_stats['monthlyStats']['expense'].items():
+                stats_text += f"　• {category}: {amount:.2f} ₽\n"
+        
+        if len(user_stats['recentTransactions']) > 0:
+            stats_text += f"\n📝 *Последние транзакции:*\n"
+            for transaction in user_stats['recentTransactions'][:5]:
+                icon = "💰" if transaction['type'] == 'income' else "💸"
+                stats_text += f"{icon} {transaction['amount']:.2f} ₽ - {transaction['category']}\n"
+        
+        stats_text += f"\n✅ *Данные актуальны на {datetime.now().strftime('%d.%m.%Y %H:%M')}*"
+        
+        await update.message.reply_text(stats_text, parse_mode="Markdown")
+        
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации для пользователя {user_id}: {e}")
+        await update.message.reply_text("❌ Ошибка при получении данных")
+
 async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка данных из Web App"""
     try:
@@ -594,6 +628,7 @@ def main():
         # Добавление обработчиков
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("sync", sync_command))
         application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         

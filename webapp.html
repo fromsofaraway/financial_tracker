@@ -382,41 +382,16 @@
 
         // Загрузка данных при запуске
         document.addEventListener('DOMContentLoaded', function() {
-            if (USE_API && user_id) {
-                // Запрашиваем данные из бота через специальную команду
-                requestDataFromBot();
-            } else {
-                // Показываем пустое состояние
-                updateBalance();
-                updateStats();
-            }
-        });
-
-        function requestDataFromBot() {
-            console.log('📤 Запрашиваем данные из бота...');
-            // Отправляем запрос боту на получение данных
-            tg.sendData(JSON.stringify({
-                action: 'get_data',
-                user_id: user_id
-            }));
-        }
-
-        function loadDataFromBot(data) {
-            console.log('📥 Получены данные от бота:', data);
-            
-            if (data.balance !== undefined) {
-                userData.balance = data.balance;
-            }
-            if (data.monthlyStats) {
-                userData.monthlyStats = data.monthlyStats;
-            }
-            if (data.recentTransactions) {
-                userData.transactions = data.recentTransactions;
-            }
-            
+            // Показываем начальное состояние
             updateBalance();
             updateStats();
-        }
+            
+            // Показываем инструкцию если нет user_id
+            if (!user_id) {
+                document.getElementById('stats-content').innerHTML = 
+                    '<div style="color: orange; text-align: center;">⚠️ Откройте через Telegram бота<br>для синхронизации данных</div>';
+            }
+        });
 
         async function saveTransactionToAPI(transaction) {
             console.log('💾 Сохранение транзакции через API:', transaction);
