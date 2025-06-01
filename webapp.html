@@ -382,7 +382,16 @@
             
             <div class="form-group">
                 <label class="form-label">Сумма</label>
-                <input type="number" class="form-input" id="amount" placeholder="Введите сумму">
+                <input 
+                    type="number" 
+                    class="form-input" 
+                    id="amount" 
+                    placeholder="Введите сумму"
+                    min="0.01"
+                    max="1000000"
+                    step="0.01"
+                    inputmode="decimal"
+                >
             </div>
 
             <div class="form-group" id="category-group">
@@ -474,6 +483,25 @@
                 console.log('✅ Обработчик события добавлен');
             } else {
                 console.error('❌ Кнопка сохранения не найдена!');
+            }
+            
+            // ✅ ДОБАВЛЯЕМ ОБРАБОТЧИК ДЛЯ ПОЛЯ ВВОДА СУММЫ
+            const amountInput = document.getElementById('amount');
+            if (amountInput) {
+                // Обработка Enter в поле суммы
+                amountInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        saveTransaction();
+                    }
+                });
+                
+                // Дебаг значений при вводе
+                amountInput.addEventListener('input', function(e) {
+                    console.log('🔍 Ввод в поле суммы:', e.target.value);
+                });
+                
+                console.log('✅ Обработчики для поля суммы добавлены');
             }
         }
 
@@ -689,34 +717,58 @@
             console.log('⏰ Время вызова:', new Date().toISOString());
             console.log('📍 Начало сохранения транзакции...');
             
-            const amount = parseFloat(document.getElementById('amount').value);
+            const amountInput = document.getElementById('amount');
             const description = document.getElementById('description').value;
             const saveBtn = document.getElementById('saveBtn');
             
-            console.log('💰 Сумма:', amount);
+            // ✅ ДЕТАЛЬНАЯ ДИАГНОСТИКА СУММЫ
+            console.log('🔍 Значение из поля ввода (RAW):', amountInput.value);
+            console.log('🔍 Тип значения:', typeof amountInput.value);
+            console.log('🔍 Длина строки:', amountInput.value.length);
+            console.log('🔍 После trim():', amountInput.value.trim());
+            
+            const amountString = amountInput.value.trim();
+            const amount = parseFloat(amountString);
+            
+            console.log('💰 Сумма после parseFloat:', amount);
+            console.log('🔍 Является ли числом:', !isNaN(amount));
+            console.log('🔍 Больше ли нуля:', amount > 0);
             console.log('📝 Описание:', description);
             console.log('📊 Тип транзакции:', currentTransactionType);
             console.log('📂 Выбранная категория:', selectedCategory);
             
-            if (!amount || amount <= 0) {
-                console.error('❌ Некорректная сумма');
-                if (tg && typeof tg.showAlert === 'function') {
-                    tg.showAlert('Введите корректную сумму');
-                } else {
-                    alert('Введите корректную сумму');
-                }
+            // ✅ УЛУЧШЕННАЯ ВАЛИДАЦИЯ СУММЫ
+            if (!amountString || amountString === '') {
+                console.error('❌ Пустое поле суммы');
+                alert('Введите сумму');
+                return;
+            }
+            
+            if (isNaN(amount)) {
+                console.error('❌ Не является числом:', amountString);
+                alert('Введите корректное число');
+                return;
+            }
+            
+            if (amount <= 0) {
+                console.error('❌ Сумма меньше или равна нулю:', amount);
+                alert('Сумма должна быть больше нуля');
+                return;
+            }
+            
+            if (amount > 1000000) {
+                console.error('❌ Сумма слишком большая:', amount);
+                alert('Сумма слишком большая (максимум 1,000,000)');
                 return;
             }
             
             if (currentTransactionType === 'expense' && !selectedCategory) {
                 console.error('❌ Категория не выбрана');
-                if (tg && typeof tg.showAlert === 'function') {
-                    tg.showAlert('Выберите категорию');
-                } else {
-                    alert('Выберите категорию');
-                }
+                alert('Выберите категорию расхода');
                 return;
             }
+            
+            console.log('✅ Все проверки пройдены!');
             
             // Блокируем кнопку и показываем процесс
             saveBtn.disabled = true;
@@ -732,7 +784,7 @@
             console.log('📦 Подготовленная транзакция для отправки:', transaction);
             console.log('👤 User ID:', user_id);
             console.log('🔧 Telegram WebApp доступен:', !!window.Telegram?.WebApp);
-            console.log('🔧 sendData функция доступна:', typeof tg.sendData);
+            console.log('🔧 sendData функция доступна:', typeof tg?.sendData);
             
             // ✅ СРАЗУ ОБНОВЛЯЕМ ЛОКАЛЬНЫЕ ДАННЫЕ для мгновенного отображения
             userData.transactions.push(transaction);
@@ -761,41 +813,46 @@
             // ✅ ОЧИЩАЕМ ФОРМУ (но НЕ закрываем модалку)
             clearForm();
             
-            // Отправляем данные боту через Telegram Web App API
-            try {
-                console.log('📡 Начинаем отправку данных через tg.sendData...');
-                const dataToSend = JSON.stringify(transaction);
-                console.log('📡 Данные для отправки (JSON):', dataToSend);
-                
-                if (typeof tg.sendData !== 'function') {
-                    throw new Error('tg.sendData не является функцией');
+            // ✅ ИСПОЛЬЗУЕМ setTimeout ЧТОБЫ НЕ БЛОКИРОВАТЬ UI
+            setTimeout(() => {
+                // Отправляем данные боту через Telegram Web App API
+                try {
+                    console.log('📡 Начинаем отправку данных через tg.sendData...');
+                    const dataToSend = JSON.stringify(transaction);
+                    console.log('📡 Данные для отправки (JSON):', dataToSend);
+                    
+                    // ✅ ПРОВЕРЯЕМ ЧТО TG ДОСТУПЕН
+                    if (!tg) {
+                        console.warn('⚠️ Telegram WebApp недоступен, данные сохранены локально');
+                        return;
+                    }
+                    
+                    if (typeof tg.sendData !== 'function') {
+                        console.warn('⚠️ tg.sendData не доступен, данные сохранены локально');
+                        return;
+                    }
+                    
+                    // ✅ ОТПРАВЛЯЕМ ДАННЫЕ БЕЗ ЗАКРЫТИЯ
+                    tg.sendData(dataToSend);
+                    console.log('✅ sendData вызван успешно');
+                    
+                    // ✅ ДОБАВЛЯЕМ ВИБРАЦИЮ ДЛЯ ОБРАТНОЙ СВЯЗИ
+                    if (tg.HapticFeedback && typeof tg.HapticFeedback.notificationOccurred === 'function') {
+                        tg.HapticFeedback.notificationOccurred('success');
+                    }
+                    
+                    console.log('ℹ️ Транзакция отправлена боту, приложение остается открытым');
+                    
+                } catch (error) {
+                    console.error('💥 Ошибка при отправке данных:', error);
+                    console.error('🔧 Состояние tg:', tg);
+                    console.error('🔧 Доступные методы tg:', Object.keys(tg || {}));
+                    
+                    // ✅ НЕ ПОКАЗЫВАЕМ ПОЛЬЗОВАТЕЛЮ ОШИБКИ ОТПРАВКИ
+                    // Данные уже сохранены локально и отображены
+                    console.log('ℹ️ Ошибка отправки не критична, данные отображены локально');
                 }
-                
-                tg.sendData(dataToSend);
-                console.log('✅ sendData вызван успешно');
-                
-                // ✅ НЕ ЗАКРЫВАЕМ ПРИЛОЖЕНИЕ! Только показываем уведомление
-                if (typeof tg.showAlert === 'function') {
-                    // Не показываем alert, так как у нас есть красивое сообщение в интерфейсе
-                    console.log('ℹ️ Транзакция отправлена боту');
-                }
-                
-            } catch (error) {
-                console.error('💥 Ошибка при отправке данных:', error);
-                
-                console.error('🔧 Состояние tg:', tg);
-                console.error('🔧 Доступные методы tg:', Object.keys(tg || {}));
-                
-                // Возвращаем кнопку в нормальное состояние при ошибке
-                saveBtn.disabled = false;
-                saveBtn.textContent = 'Сохранить';
-                
-                if (tg && typeof tg.showAlert === 'function') {
-                    tg.showAlert('Ошибка при отправке данных боту: ' + error.message);
-                } else {
-                    alert('Ошибка при отправке данных боту: ' + error.message);
-                }
-            }
+            }, 100); // Небольшая задержка для плавности UI
         }
 
         // Обработка закрытия приложения (если пользователь сам захочет закрыть)
