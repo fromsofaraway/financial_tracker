@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import logging
+import json
 from datetime import datetime, timedelta
 from typing import Dict, Any
 from dotenv import load_dotenv
@@ -124,8 +125,8 @@ user_states = {}
 
 def get_main_keyboard():
     """Главная клавиатура с Web App"""
-    # URL твоего размещенного HTML файла
-    webapp_url = os.getenv("GITHUB_DOMAIN")  # Замени на свой URL
+    # Замени на свой реальный GitHub Pages URL
+    webapp_url = os.getenv("WEBAPP_URL", "https://your-username.github.io/your-repo-name/webapp.html")
     
     keyboard = [
         [KeyboardButton("🚀 Открыть приложение", web_app=WebAppInfo(url=webapp_url))],
@@ -167,7 +168,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_main_keyboard()
     )
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка данных из Web App"""
+    try:
+        user_id = update.effective_user.id
+        data = json.loads(update.effective_message.web_app_data.data)
+        
+        # Добавляем транзакцию из Web App
+        tracker.add_transaction(
+            user_id=user_id,
+            transaction_type=data['type'],
+            amount=data['amount'],
+            category=data['category'],
+            description=data.get('description', '')
+        )
+        
+        transaction_type_text = "Доход" if data['type'] == 'income' else "Расход"
+        await update.message.reply_text(
+            f"✅ {transaction_type_text} добавлен через приложение!\n\n"
+            f"💰 {data['amount']:.2f} ₽\n"
+            f"📂 {data['category']}\n"
+            f"📝 {data.get('description', '')}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка обработки Web App данных: {e}")
+        await update.message.reply_text("❌ Ошибка при сохранении данных")
     """Команда помощи"""
     help_text = """
 📖 *Как пользоваться ботом:*
@@ -337,6 +363,7 @@ def main():
     # Добавление обработчиков
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     print("🤖 Бот запущен!")
