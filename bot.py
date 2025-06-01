@@ -181,9 +181,18 @@ EXPENSE_CATEGORIES = ["Кофе", "Заведение", "Одежда", "Кос�
 user_states = {}
 
 def get_main_keyboard():
-    """Главная клавиатура с Web App"""
-    # Замени на свой реальный GitHub Pages URL
-    webapp_url = os.getenv("WEBAPP_URL", "https://your-username.github.io/your-repo-name/webapp.html")
+    """Главная клавиатура с Web App (автоматически с данными)"""
+    keyboard = [
+        [KeyboardButton("🚀 Открыть приложение", web_app=WebAppInfo(url=""))],  # URL будет динамический
+        [KeyboardButton("📊 Баланс"), KeyboardButton("📈 Статистика")],
+        [KeyboardButton("💰 Добавить доход"), KeyboardButton("💸 Добавить расход")],
+        [KeyboardButton("❓ Помощь")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_dynamic_keyboard(user_id: int):
+    """Клавиатура с динамической ссылкой на веб-приложение"""
+    webapp_url = get_webapp_url_with_data(user_id)
     
     keyboard = [
         [KeyboardButton("🚀 Открыть приложение", web_app=WebAppInfo(url=webapp_url))],
@@ -195,22 +204,45 @@ def get_main_keyboard():
 
 def get_webapp_url_with_data(user_id: int) -> str:
     """Создание URL веб-приложения с данными пользователя"""
-    base_url = os.getenv("WEBAPP_URL", "https://your-username.github.io/your-repo-name/webapp.html")
-    
-    # Получаем данные пользователя
-    user_stats = tracker.get_user_stats(user_id)
-    
-    # Кодируем данные в URL
-    import urllib.parse
-    data = {
-        'balance': user_stats['balance'],
-        'income': user_stats['monthlyStats']['total_income'],
-        'expense': user_stats['monthlyStats']['total_expense'],
-        'expenses': json.dumps(user_stats['monthlyStats']['expense'])
-    }
-    
-    query_string = urllib.parse.urlencode(data)
-    return f"{base_url}?{query_string}"
+    try:
+        base_url = os.getenv("WEBAPP_URL", "https://your-username.github.io/your-repo-name/webapp.html")
+        
+        logger.info(f"Создание URL с данными для пользователя {user_id}")
+        
+        # Получаем данные пользователя
+        user_stats = tracker.get_user_stats(user_id)
+        
+        logger.debug(f"Данные пользователя для URL: {user_stats}")
+        
+        # Проверяем, что все данные есть
+        balance = user_stats.get('balance', 0)
+        monthly_stats = user_stats.get('monthlyStats', {})
+        
+        if monthly_stats is None:
+            monthly_stats = {"income": {}, "expense": {}, "total_income": 0, "total_expense": 0}
+        
+        total_income = monthly_stats.get('total_income', 0)
+        total_expense = monthly_stats.get('total_expense', 0)
+        expense_categories = monthly_stats.get('expense', {})
+        
+        # Кодируем данные в URL
+        data = {
+            'balance': balance,
+            'income': total_income,
+            'expense': total_expense,
+            'expenses': json.dumps(expense_categories)
+        }
+        
+        query_string = urllib.parse.urlencode(data)
+        final_url = f"{base_url}?{query_string}"
+        
+        logger.info(f"Создан URL: {final_url}")
+        return final_url
+        
+    except Exception as e:
+        logger.error(f"Ошибка создания URL с данными: {e}")
+        # Возвращаем базовый URL без данных
+        return os.getenv("WEBAPP_URL", "https://your-username.github.io/your-repo-name/webapp.html")
 
 def get_category_keyboard(transaction_type: str):
     """Клавиатура с категориями расходов"""
@@ -241,7 +273,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         welcome_text,
         parse_mode="Markdown",
-        reply_markup=get_main_keyboard()
+        reply_markup=get_dynamic_keyboard(user_id)  # Автоматически с актуальными данными
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -269,76 +301,31 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
-async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда для обновления ссылки на веб-приложение с актуальными данными"""
-    user_id = update.effective_user.id
-    
-    logger.info(f"Команда обновления веб-приложения для пользователя {user_id}")
-    
-    try:
-        # Создаем inline кнопку с актуальными данными
-        webapp_url = get_webapp_url_with_data(user_id)
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚀 Открыть приложение с данными", web_app=WebAppInfo(url=webapp_url))]
-        ])
-        
-        await update.message.reply_text(
-            "🔄 *Веб-приложение обновлено*\n\nНажмите кнопку ниже для открытия приложения с актуальными данными:",
-            parse_mode="Markdown",
-            reply_markup=keyboard
-        )
-        
-    except Exception as e:
-        logger.error(f"Ошибка обновления веб-приложения для пользователя {user_id}: {e}")
-        await update.message.reply_text("❌ Ошибка при обновлении приложения")
-
 async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка данных из Web App"""
     try:
         user_id = update.effective_user.id
         data = json.loads(update.effective_message.web_app_data.data)
         
-        logger.info(f"Получены данные от Web App: {data}")
+        logger.info(f"Получены данные от Web App от пользователя {user_id}: {data}")
         
-        action = data.get('action')
+        # Добавляем транзакцию из Web App
+        tracker.add_transaction(
+            user_id=user_id,
+            transaction_type=data['type'],
+            amount=data['amount'],
+            category=data['category'],
+            description=data.get('description', '')
+        )
         
-        if action == 'get_data':
-            # Запрос данных пользователя
-            logger.info(f"Запрос данных для пользователя {user_id}")
-            user_stats = tracker.get_user_stats(user_id)
-            
-            # Отправляем данные обратно (можно через inline кнопку или просто сообщение)
-            stats_text = f"📊 *Ваши данные:*\n\n"
-            stats_text += f"💰 Баланс: {user_stats['balance']:.2f} ₽\n"
-            stats_text += f"📈 Доходы за месяц: {user_stats['monthlyStats']['total_income']:.2f} ₽\n"
-            stats_text += f"📉 Расходы за месяц: {user_stats['monthlyStats']['total_expense']:.2f} ₽\n"
-            stats_text += f"🔄 Данные синхронизированы!"
-            
-            await update.message.reply_text(stats_text, parse_mode="Markdown")
-            
-        elif action == 'add_transaction':
-            # Добавление транзакции
-            logger.info(f"Добавление транзакции через Web App для пользователя {user_id}")
-            
-            tracker.add_transaction(
-                user_id=user_id,
-                transaction_type=data['type'],
-                amount=data['amount'],
-                category=data['category'],
-                description=data.get('description', '')
-            )
-            
-            transaction_type_text = "Доход" if data['type'] == 'income' else "Расход"
-            await update.message.reply_text(
-                f"✅ {transaction_type_text} добавлен через приложение!\n\n"
-                f"💰 {data['amount']:.2f} ₽\n"
-                f"📂 {data['category']}\n"
-                f"📝 {data.get('description', '')}"
-            )
-        else:
-            logger.warning(f"Неизвестное действие Web App: {action}")
-            await update.message.reply_text("❌ Неизвестная команда от приложения")
+        transaction_type_text = "Доход" if data['type'] == 'income' else "Расход"
+        await update.message.reply_text(
+            f"✅ {transaction_type_text} добавлен через приложение!\n\n"
+            f"💰 {data['amount']:.2f} ₽\n"
+            f"📂 {data['category']}\n"
+            f"📝 {data.get('description', '')}",
+            reply_markup=get_dynamic_keyboard(user_id)  # Обновляем клавиатуру с новыми данными
+        )
         
     except Exception as e:
         logger.error(f"Ошибка обработки Web App данных: {e}", exc_info=True)
@@ -525,7 +512,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif difference < 0:
                 stats_text += " ❌"
             
-            await update.message.reply_text(stats_text, parse_mode="Markdown")
+            await update.message.reply_text(stats_text, parse_mode="Markdown", reply_markup=get_dynamic_keyboard(user_id))
             
         elif text == "❓ Помощь":
             await help_command(update, context)
@@ -553,7 +540,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"✅ Доход добавлен!\n\n💰 *{amount:.2f} ₽*\n📝 {description}",
                 parse_mode="Markdown",
-                reply_markup=get_main_keyboard()
+                reply_markup=get_dynamic_keyboard(user_id)  # Обновляем с новыми данными
             )
             user_states[user_id] = {"state": "main"}
             
@@ -577,7 +564,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"✅ Расход добавлен!\n\n💸 *{amount:.2f} ₽*\n📂 {category}\n📝 {description}",
                 parse_mode="Markdown",
-                reply_markup=get_main_keyboard()
+                reply_markup=get_dynamic_keyboard(user_id)  # Обновляем с новыми данными
             )
             user_states[user_id] = {"state": "main"}
             
@@ -638,7 +625,6 @@ def main():
         # Добавление обработчиков
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(CommandHandler("sync", sync_command))
         application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         

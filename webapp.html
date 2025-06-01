@@ -339,15 +339,32 @@
 
     <script>
         // Инициализация Telegram Web App
-        const tg = window.Telegram.WebApp;
-        tg.ready();
-        tg.expand();
+        console.log('🔧 Проверка доступности Telegram WebApp...');
+        console.log('🔧 window.Telegram:', !!window.Telegram);
+        console.log('🔧 window.Telegram.WebApp:', !!window.Telegram?.WebApp);
+        
+        const tg = window.Telegram?.WebApp;
+        
+        if (!tg) {
+            console.error('❌ Telegram WebApp недоступен!');
+            alert('Откройте приложение через Telegram');
+        } else {
+            console.log('✅ Telegram WebApp доступен');
+            console.log('🔧 tg object:', tg);
+            console.log('🔧 tg.sendData:', typeof tg.sendData);
+            console.log('🔧 tg.ready:', typeof tg.ready);
+            console.log('🔧 tg.expand:', typeof tg.expand);
+            
+            tg.ready();
+            tg.expand();
+            console.log('✅ WebApp инициализирован');
+        }
 
         // Получаем данные пользователя из Telegram
-        console.log('🔍 Telegram Web App данные:', tg.initData);
-        console.log('🔍 Parsed данные:', tg.initDataUnsafe);
+        console.log('🔍 Telegram Web App данные:', tg?.initData);
+        console.log('🔍 Parsed данные:', tg?.initDataUnsafe);
         
-        const user_id = tg.initDataUnsafe?.user?.id;
+        const user_id = tg?.initDataUnsafe?.user?.id;
         console.log('👤 User ID из Telegram:', user_id);
         
         // Получаем данные из URL параметров
