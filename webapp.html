@@ -25,6 +25,7 @@
             margin: 0 auto;
             padding: 20px;
             min-height: 100vh;
+            padding-bottom: 100px;
         }
 
         .header {
@@ -120,6 +121,142 @@
             opacity: 0.7;
         }
 
+        /* Новая секция с несохраненными транзакциями */
+        .pending-transactions {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            animation: slideUp 0.8s ease-out 0.5s both;
+            display: none;
+        }
+
+        .pending-transactions.visible {
+            display: block;
+        }
+
+        .pending-title {
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+            text-align: center;
+            color: #FFD700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .pending-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .pending-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .pending-item:last-child {
+            border-bottom: none;
+        }
+
+        .pending-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .pending-category {
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .pending-description {
+            font-size: 0.8rem;
+            opacity: 0.7;
+        }
+
+        .pending-amount {
+            font-weight: bold;
+            font-size: 1rem;
+        }
+
+        .pending-amount.income {
+            color: #4CAF50;
+        }
+
+        .pending-amount.expense {
+            color: #F44336;
+        }
+
+        .pending-remove {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid rgba(244, 67, 54, 0.4);
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 0.8rem;
+            margin-left: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .pending-remove:hover {
+            background: rgba(244, 67, 54, 0.4);
+        }
+
+        /* Кнопка сохранения */
+        .save-button {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            padding: 15px 40px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .save-button.visible {
+            display: flex;
+        }
+
+        .save-button:hover {
+            transform: translateX(-50%) translateY(-2px);
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+        }
+
+        .save-button:active {
+            transform: translateX(-50%) scale(0.98);
+        }
+
+        .save-button.saving {
+            background: linear-gradient(135deg, #666, #555);
+            cursor: not-allowed;
+        }
+
+        .save-button.saving .save-icon {
+            animation: rotate 1s linear infinite;
+        }
+
         .stats-card {
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(20px);
@@ -160,56 +297,50 @@
             gap: 10px;
         }
 
-    .modal {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        /* Оставляем только полупрозрачный фон через background-color */
-        background-color: rgba(0, 0, 0, 0.5); /* */
-        /* убираем backdrop-filter, т.к. в Telegram он часто не работает */
-        z-index: 1000; /* */
-    }
-
-    /* Фолбэк: если backdrop-filter поддерживается, можно добавить слабую размытую прослойку */
-    @supports (backdrop-filter: blur(10px)) {
         .modal {
-            background-color: rgba(0, 0, 0, 0.3); /* */
-            backdrop-filter: blur(8px); /* */
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
         }
-    }
 
-    /* Фолбэк: если backdrop-filter поддерживается, можно добавить слабую размытую прослойку */
-    @supports (backdrop-filter: blur(10px)) {
-        .modal {
-            background-color: rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(8px);
+        .modal.show {
+            opacity: 1;
         }
-    }
 
+        @supports (backdrop-filter: blur(10px)) {
+            .modal {
+                background-color: rgba(0, 0, 0, 0.3);
+                backdrop-filter: blur(8px);
+            }
+        }
 
         .modal-content {
-            position: absolute; /* */
-            top: 50%; /* */
-            left: 50%; /* */
-            transform: translate(-50%, -50%); /* */
-            /* MODIFIED: Фон сделан более плотным и темным, чтобы лучше сочетаться с темой
-            и уменьшить проблемы смешивания, если основной backdrop-filter работает некорректно. */
-            background: rgba(60, 50, 85, 0.85); /* Примерный цвет, можно подобрать точнее под вашу палитру */
-            /* REMOVED: backdrop-filter: blur(20px);
-            Это свойство в modal-content часто конфликтует с backdrop-filter родительского .modal,
-            особенно в разных браузерах/веб-вью. */
-            border-radius: 20px; /* */
-            padding: 30px; /* */
-            width: 90%; /* */
-            max-width: 350px; /* */
-            border: 1px solid rgba(255, 255, 255, 0.2); /* */
-            /* Это уже есть в вашем коде и это правильно для позиционирования .success-message */
-            position: relative; /* */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: rgba(60, 50, 85, 0.85);
+            border-radius: 20px;
+            padding: 30px;
+            width: 90%;
+            max-width: 350px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+            opacity: 0;
+            transition: all 0.3s ease;
         }
 
+        .modal.show .modal-content {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
 
         .form-group {
             margin-bottom: 20px;
@@ -295,25 +426,21 @@
         }
 
         .success-message {
-            position: absolute; /* */
-            /* MODIFIED: Скорректировано вертикальное положение.
-            Значение 65px — примерное, чтобы сообщение появилось ниже заголовка H3.
-            Возможно, потребуется небольшая подстройка в зависимости от реальной высоты заголовка. */
-            top: 65px; /* Было top: 15px; */
-            left: 50%; /* */
-            transform: translateX(-50%); /* */
-            background: rgba(76, 175, 80, 0.9); /* */
-            border: 1px solid rgba(76, 175, 80, 0.4); /* */
-            border-radius: 10px; /* */
-            padding: 10px 15px; /* */
-            margin: 0; /* */ /* margin-bottom и так был убран/отсутствовал, это хорошо */
-            width: calc(100% - 40px); /* */
-            text-align: center; /* */
-            z-index: 1001; /* */
-            opacity: 0; /* */ /* Остается для управления анимацией fade-in/out */
+            position: absolute;
+            top: 65px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(76, 175, 80, 0.9);
+            border: 1px solid rgba(76, 175, 80, 0.4);
+            border-radius: 10px;
+            padding: 10px 15px;
+            margin: 0;
+            width: calc(100% - 40px);
+            text-align: center;
+            z-index: 1001;
+            opacity: 0;
         }
 
-        /* 2. Ключевые кадры */
         @keyframes fadeIn {
             from { opacity: 0; }
             to   { opacity: 1; }
@@ -324,7 +451,6 @@
             to   { opacity: 0; }
         }
 
-        /* 3. Классы для запуска анимаций */
         .success-message.fade-in {
             animation: fadeIn 0.5s ease-out forwards;
         }
@@ -336,33 +462,6 @@
         .success-icon {
             font-size: 2rem;
             margin-bottom: 10px;
-        }
-
-        .sync-btn {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-size: 1.5rem;
-        }
-
-        .sync-btn:hover {
-            background: rgba(255, 255, 255, 0.3);
-            transform: rotate(180deg);
-        }
-
-        .sync-btn.syncing {
-            animation: rotate 1s linear infinite;
         }
 
         @keyframes rotate {
@@ -392,15 +491,6 @@
             }
         }
 
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-            to {
-                opacity: 1;
-            }
-        }
-
         .loading {
             text-align: center;
             padding: 20px;
@@ -421,6 +511,19 @@
             100% {
                 transform: scale(1);
             }
+        }
+
+        /* Счетчик в кнопке сохранения */
+        .save-counter {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -449,14 +552,39 @@
             </div>
         </div>
 
+        <!-- Новая секция с несохраненными транзакциями -->
+        <div class="pending-transactions" id="pendingTransactions">
+            <div class="pending-title">
+                <span>⏳</span>
+                <span>Несохраненные транзакции</span>
+            </div>
+            <div class="pending-list" id="pendingList">
+                <!-- Список будет заполняться динамически -->
+            </div>
+        </div>
+
+        <div class="stats-card" id="dailyStatsCard">
+            <div class="stats-title">📅 Статистика за день</div>
+            <div id="daily-stats-content" class="loading">Загружаем данные...</div>
+        </div>
+
+        <div class="stats-card" id="weeklyStatsCard">
+            <div class="stats-title">📊 Статистика за неделю</div>
+            <div id="weekly-stats-content" class="loading">Загружаем данные...</div>
+        </div>
+
         <div class="stats-card" id="statsCard">
             <div class="stats-title">📈 Статистика за месяц</div>
             <div id="stats-content" class="loading">Загружаем данные...</div>
         </div>
     </div>
 
-    <!-- Кнопка синхронизации -->
-    <div class="sync-btn" id="syncBtn" onclick="syncWithBot()">🔄</div>
+    <!-- Кнопка сохранения -->
+    <button class="save-button" id="saveButton" onclick="syncWithBot()">
+        <span class="save-icon">💾</span>
+        <span>Сохранить</span>
+        <span class="save-counter" id="saveCounter">0</span>
+    </button>
 
     <!-- Модальное окно -->
     <div class="modal" id="transactionModal">
@@ -495,8 +623,7 @@
 
             <div class="btn-group">
                 <button class="btn btn-secondary" onclick="closeModal()">Закрыть</button>
-                <!-- Убираем onclick из HTML -->
-                <button class="btn btn-primary" id="saveBtn">Сохранить</button>
+                <button class="btn btn-primary" id="addBtn">Добавить</button>
             </div>
         </div>
     </div>
@@ -546,6 +673,8 @@
                 if (savedQueue) {
                     transactionQueue = JSON.parse(savedQueue);
                     console.log('📦 Загружена очередь транзакций:', transactionQueue.length);
+                    updatePendingTransactions();
+                    updateSaveButton();
                 }
             } catch (e) {
                 console.log('⚠️ localStorage недоступен');
@@ -563,15 +692,14 @@
         function setupEventListeners() {
             console.log('🔧 Настройка обработчиков событий...');
             
-            const saveBtn = document.getElementById('saveBtn');
-            if (saveBtn) {
-                console.log('✅ Кнопка сохранения найдена');
+            const addBtn = document.getElementById('addBtn');
+            if (addBtn) {
+                console.log('✅ Кнопка добавления найдена');
                 
-                // Используем addEventListener вместо onclick
-                saveBtn.addEventListener('click', function(e) {
-                    console.log('🎯 Клик по кнопке сохранения!');
+                addBtn.addEventListener('click', function(e) {
+                    console.log('🎯 Клик по кнопке добавления!');
                     e.preventDefault();
-                    saveTransaction();
+                    addTransaction();
                 });
                 
                 console.log('✅ Обработчик события добавлен');
@@ -583,12 +711,39 @@
                 amountInput.addEventListener('keypress', function(e) {
                     if (e.key === 'Enter') {
                         e.preventDefault();
-                        saveTransaction();
+                        addTransaction();
                     }
                 });
                 
                 console.log('✅ Обработчики для поля суммы добавлены');
             }
+
+            // Обработчик для закрытия модального окна при клике вне его
+            const modal = document.getElementById('transactionModal');
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    // Проверяем, что клик был именно по фону модального окна, а не по его содержимому
+                    if (e.target === modal) {
+                        console.log('🎯 Клик вне модального окна - закрываем');
+                        closeModal();
+                    }
+                });
+                
+                console.log('✅ Обработчик для закрытия модального окна добавлен');
+            }
+
+            // Обработчик для закрытия модального окна по клавише Escape
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    const modal = document.getElementById('transactionModal');
+                    if (modal.style.display === 'block') {
+                        console.log('⌨️ Нажата клавиша Escape - закрываем модальное окно');
+                        closeModal();
+                    }
+                }
+            });
+            
+            console.log('✅ Обработчик для клавиши Escape добавлен');
         }
 
         function loadDataFromURL() {
@@ -676,6 +831,95 @@
             }, 1000);
         }
 
+        function updatePendingTransactions() {
+            const pendingTransactions = document.getElementById('pendingTransactions');
+            const pendingList = document.getElementById('pendingList');
+            
+            if (transactionQueue.length === 0) {
+                pendingTransactions.classList.remove('visible');
+                return;
+            }
+            
+            pendingTransactions.classList.add('visible');
+            
+            let html = '';
+            transactionQueue.forEach((transaction, index) => {
+                const amountClass = transaction.type === 'income' ? 'income' : 'expense';
+                const amountPrefix = transaction.type === 'income' ? '+' : '-';
+                
+                html += `
+                    <div class="pending-item">
+                        <div class="pending-info">
+                            <div class="pending-category">${transaction.category}</div>
+                            ${transaction.description ? `<div class="pending-description">${transaction.description}</div>` : ''}
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            <div class="pending-amount ${amountClass}">
+                                ${amountPrefix}${transaction.amount.toFixed(2)} ₽
+                            </div>
+                            <div class="pending-remove" onclick="removePendingTransaction(${index})">×</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            pendingList.innerHTML = html;
+        }
+
+        function updateSaveButton() {
+            const saveButton = document.getElementById('saveButton');
+            const saveCounter = document.getElementById('saveCounter');
+            
+            if (transactionQueue.length > 0) {
+                saveButton.classList.add('visible');
+                saveCounter.textContent = transactionQueue.length;
+            } else {
+                saveButton.classList.remove('visible');
+            }
+        }
+
+        function removePendingTransaction(index) {
+            if (index >= 0 && index < transactionQueue.length) {
+                const removedTransaction = transactionQueue[index];
+                
+                // Убираем из очереди
+                transactionQueue.splice(index, 1);
+                
+                // Обновляем локальные данные (откатываем изменения)
+                if (removedTransaction.type === 'income') {
+                    userData.balance -= removedTransaction.amount;
+                    userData.monthlyStats.total_income -= removedTransaction.amount;
+                } else {
+                    userData.balance += removedTransaction.amount;
+                    userData.monthlyStats.total_expense -= removedTransaction.amount;
+                    if (userData.monthlyStats.expense[removedTransaction.category]) {
+                        userData.monthlyStats.expense[removedTransaction.category] -= removedTransaction.amount;
+                        if (userData.monthlyStats.expense[removedTransaction.category] <= 0) {
+                            delete userData.monthlyStats.expense[removedTransaction.category];
+                        }
+                    }
+                }
+                
+                // Обновляем интерфейс
+                updateBalance();
+                updateStats();
+                updatePendingTransactions();
+                updateSaveButton();
+                
+                // Сохраняем обновленную очередь
+                try {
+                    localStorage.setItem('transactionQueue', JSON.stringify(transactionQueue));
+                } catch (e) {
+                    console.log('⚠️ Не удалось сохранить в localStorage');
+                }
+                
+                // Вибрация для обратной связи
+                if (tg?.HapticFeedback?.notificationOccurred) {
+                    tg.HapticFeedback.notificationOccurred('warning');
+                }
+            }
+        }
+
         function openModal(type) {
             currentTransactionType = type;
             const modal = document.getElementById('transactionModal');
@@ -704,7 +948,13 @@
                 });
             }
             
+            // Показываем модальное окно с анимацией
             modal.style.display = 'block';
+            
+            // Запускаем анимацию появления через небольшую задержку
+            setTimeout(() => {
+                modal.classList.add('show');
+            }, 10);
             
             // Очистка формы
             document.getElementById('amount').value = '';
@@ -712,9 +962,9 @@
             selectedCategory = '';
             
             // Сбрасываем состояние кнопки
-            const saveBtn = document.getElementById('saveBtn');
-            saveBtn.disabled = false;
-            saveBtn.textContent = 'Сохранить';
+            const addBtn = document.getElementById('addBtn');
+            addBtn.disabled = false;
+            addBtn.textContent = 'Добавить';
             
             // Фокусируемся на поле суммы
             setTimeout(() => {
@@ -733,7 +983,15 @@
         }
 
         function closeModal() {
-            document.getElementById('transactionModal').style.display = 'none';
+            const modal = document.getElementById('transactionModal');
+            
+            // Убираем класс show для запуска анимации закрытия
+            modal.classList.remove('show');
+            
+            // Полностью скрываем модальное окно после завершения анимации
+            setTimeout(() => {
+                modal.style.display = 'none';
+            }, 300); // 300ms соответствует времени transition
         }
 
         function showSuccessMessage(amount, category, type) {
@@ -780,17 +1038,17 @@
             });
             
             // Сбрасываем состояние кнопки
-            const saveBtn = document.getElementById('saveBtn');
-            saveBtn.disabled = false;
-            saveBtn.textContent = 'Сохранить';
+            const addBtn = document.getElementById('addBtn');
+            addBtn.disabled = false;
+            addBtn.textContent = 'Добавить';
         }
 
-        function saveTransaction() {
-            console.log('🚀 Сохранение транзакции...');
+        function addTransaction() {
+            console.log('🚀 Добавление транзакции...');
             
             const amountInput = document.getElementById('amount');
             const description = document.getElementById('description').value;
-            const saveBtn = document.getElementById('saveBtn');
+            const addBtn = document.getElementById('addBtn');
             
             const amount = parseFloat(amountInput.value);
             
@@ -813,8 +1071,8 @@
             console.log('✅ Все проверки пройдены!');
             
             // Блокируем кнопку
-            saveBtn.disabled = true;
-            saveBtn.textContent = 'Сохранение...';
+            addBtn.disabled = true;
+            addBtn.textContent = 'Добавляем...';
             
             const transaction = {
                 type: currentTransactionType,
@@ -852,6 +1110,10 @@
             // Добавляем транзакцию в очередь для синхронизации
             transactionQueue.push(transaction);
             
+            // Обновляем список несохраненных транзакций
+            updatePendingTransactions();
+            updateSaveButton();
+            
             // Сохраняем очередь в localStorage (если доступен)
             try {
                 localStorage.setItem('transactionQueue', JSON.stringify(transactionQueue));
@@ -859,38 +1121,31 @@
                 console.log('⚠️ Не удалось сохранить в localStorage');
             }
             
-            // Показываем индикатор несинхронизированных данных
-            updateSyncButton();
-            
             // Вибрация для обратной связи
             if (tg?.HapticFeedback?.notificationOccurred) {
                 tg.HapticFeedback.notificationOccurred('success');
             }
             
-            console.log('✅ Транзакция сохранена локально. Очередь:', transactionQueue.length);
-        }
-
-        function updateSyncButton() {
-            const syncBtn = document.getElementById('syncBtn');
-            if (transactionQueue.length > 0) {
-                syncBtn.innerHTML = `🔄 <span style="position: absolute; top: 0; right: 0; background: red; color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; display: flex; align-items: center; justify-content: center;">${transactionQueue.length}</span>`;
-            } else {
-                syncBtn.innerHTML = '🔄';
-            }
+            console.log('✅ Транзакция добавлена локально. Очередь:', transactionQueue.length);
         }
 
         // Функция синхронизации с ботом
         async function syncWithBot() {
             console.log('🔄 Начинаем синхронизацию с ботом...');
             
-            const syncBtn = document.getElementById('syncBtn');
-            syncBtn.classList.add('syncing');
+            const saveButton = document.getElementById('saveButton');
+            const saveIcon = saveButton.querySelector('.save-icon');
             
             if (transactionQueue.length === 0) {
                 console.log('📭 Нет транзакций для синхронизации');
-                syncBtn.classList.remove('syncing');
                 return;
             }
+            
+            // Меняем состояние кнопки
+            saveButton.classList.add('saving');
+            saveButton.disabled = true;
+            saveIcon.style.animation = 'rotate 1s linear infinite';
+            saveButton.querySelector('span:nth-child(2)').textContent = 'Сохраняем...';
             
             // Подготавливаем данные для отправки
             const dataToSync = {
@@ -910,6 +1165,10 @@
                     try {
                         localStorage.removeItem('transactionQueue');
                     } catch (e) {}
+                    
+                    // Обновляем интерфейс
+                    updatePendingTransactions();
+                    updateSaveButton();
                 } else {
                     alert('Синхронизация недоступна. Откройте приложение через Telegram.');
                 }
@@ -918,12 +1177,16 @@
                 alert('Ошибка синхронизации. Попробуйте позже.');
             }
             
-            syncBtn.classList.remove('syncing');
-            updateSyncButton();
+            // Восстанавливаем состояние кнопки
+            saveButton.classList.remove('saving');
+            saveButton.disabled = false;
+            saveIcon.style.animation = '';
+            saveButton.querySelector('span:nth-child(2)').textContent = 'Сохранить';
         }
 
         // Инициализация при загрузке
-        updateSyncButton();
+        updatePendingTransactions();
+        updateSaveButton();
     </script>
 </body>
 </html>
