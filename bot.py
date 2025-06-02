@@ -109,6 +109,66 @@ class FinanceTracker:
         logger.debug(f"Баланс пользователя {user_id}: {balance}")
         return balance
     
+    def get_daily_stats(self, user_id: int) -> Dict[str, Any]:
+        """Получение статистики за день"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Получаем текущую дату
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        
+        cursor.execute('''
+            SELECT type, category, SUM(amount) FROM transactions 
+            WHERE user_id = ? AND date(date) = ? 
+            GROUP BY type, category
+        ''', (user_id, today_str))
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        stats = {"income": {}, "expense": {}, "total_income": 0, "total_expense": 0}
+        
+        for transaction_type, category, amount in results:
+            if transaction_type == "income":
+                stats["income"][category] = amount
+                stats["total_income"] += amount
+            else:
+                stats["expense"][category] = amount
+                stats["total_expense"] += amount
+        
+        return stats
+    
+    def get_weekly_stats(self, user_id: int) -> Dict[str, Any]:
+        """Получение статистики за неделю"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Получаем дату начала недели (понедельник)
+        today = datetime.now()
+        week_start = today - timedelta(days=today.weekday())
+        week_start_str = week_start.strftime("%Y-%m-%d")
+        
+        cursor.execute('''
+            SELECT type, category, SUM(amount) FROM transactions 
+            WHERE user_id = ? AND date >= ? 
+            GROUP BY type, category
+        ''', (user_id, week_start_str))
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        stats = {"income": {}, "expense": {}, "total_income": 0, "total_expense": 0}
+        
+        for transaction_type, category, amount in results:
+            if transaction_type == "income":
+                stats["income"][category] = amount
+                stats["total_income"] += amount
+            else:
+                stats["expense"][category] = amount
+                stats["total_expense"] += amount
+        
+        return stats
+    
     def get_monthly_stats(self, user_id: int) -> Dict[str, Any]:
         """Получение статистики за месяц"""
         conn = sqlite3.connect(self.db_path)
@@ -135,7 +195,6 @@ class FinanceTracker:
                 stats["expense"][category] = amount
                 stats["total_expense"] += amount
         
-        # ✅ ИСПРАВЛЕНО: добавлен return
         return stats
     
     def get_user_transactions(self, user_id: int, limit: int = 50) -> list:
@@ -171,11 +230,15 @@ class FinanceTracker:
         logger.info(f"Получение полной статистики для пользователя {user_id}")
         
         balance = self.get_user_balance(user_id)
+        daily_stats = self.get_daily_stats(user_id)
+        weekly_stats = self.get_weekly_stats(user_id)
         monthly_stats = self.get_monthly_stats(user_id)
         transactions = self.get_user_transactions(user_id, 10)
         
         result = {
             'balance': balance,
+            'dailyStats': daily_stats,
+            'weeklyStats': weekly_stats,
             'monthlyStats': monthly_stats,
             'recentTransactions': transactions
         }
@@ -207,6 +270,15 @@ def get_main_keyboard(user_id: int):
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
+def get_stats_keyboard():
+    """Клавиатура для выбора периода статистики"""
+    keyboard = [
+        [KeyboardButton("📅 За день"), KeyboardButton("📆 За неделю")],
+        [KeyboardButton("🗓️ За месяц")],
+        [KeyboardButton("🔙 Назад")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
 def get_webapp_url_with_data(user_id: int) -> str:
     """Создание URL веб-приложения с данными пользователя"""
     try:
@@ -219,20 +291,45 @@ def get_webapp_url_with_data(user_id: int) -> str:
         logger.debug(f"Данные пользователя для URL: {user_stats}")
         
         balance = user_stats.get('balance', 0)
+        daily_stats = user_stats.get('dailyStats', {})
+        weekly_stats = user_stats.get('weeklyStats', {})
         monthly_stats = user_stats.get('monthlyStats', {})
         
+        # Обработка дневной статистики
+        if daily_stats is None:
+            daily_stats = {"income": {}, "expense": {}, "total_income": 0, "total_expense": 0}
+        
+        daily_income = daily_stats.get('total_income', 0)
+        daily_expense = daily_stats.get('total_expense', 0)
+        daily_expense_categories = daily_stats.get('expense', {})
+        
+        # Обработка недельной статистики
+        if weekly_stats is None:
+            weekly_stats = {"income": {}, "expense": {}, "total_income": 0, "total_expense": 0}
+        
+        weekly_income = weekly_stats.get('total_income', 0)
+        weekly_expense = weekly_stats.get('total_expense', 0)
+        weekly_expense_categories = weekly_stats.get('expense', {})
+        
+        # Обработка месячной статистики
         if monthly_stats is None:
             monthly_stats = {"income": {}, "expense": {}, "total_income": 0, "total_expense": 0}
         
-        total_income = monthly_stats.get('total_income', 0)
-        total_expense = monthly_stats.get('total_expense', 0)
-        expense_categories = monthly_stats.get('expense', {})
+        monthly_income = monthly_stats.get('total_income', 0)
+        monthly_expense = monthly_stats.get('total_expense', 0)
+        monthly_expense_categories = monthly_stats.get('expense', {})
         
         data = {
             'balance': balance,
-            'income': total_income,
-            'expense': total_expense,
-            'expenses': json.dumps(expense_categories),
+            'dailyIncome': daily_income,
+            'dailyExpense': daily_expense,
+            'dailyExpenses': json.dumps(daily_expense_categories),
+            'weeklyIncome': weekly_income,
+            'weeklyExpense': weekly_expense,
+            'weeklyExpenses': json.dumps(weekly_expense_categories),
+            'monthlyIncome': monthly_income,
+            'monthlyExpense': monthly_expense,
+            'monthlyExpenses': json.dumps(monthly_expense_categories),
             'timestamp': int(time.time()),
             'user_id': user_id
         }
@@ -267,7 +364,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 *Доступные функции:*
 • Добавление доходов и расходов
 • Просмотр текущего баланса
-• Статистика за месяц
+• Статистика за день, неделю и месяц
 • Категоризация транзакций
 
 Используй кнопки меню для навигации!
@@ -294,7 +391,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 *Просмотр данных:*
 • "📊 Баланс" - текущий баланс
-• "📈 Статистика" - данные за текущий месяц
+• "📈 Статистика" - данные за день, неделю или месяц
 
 *Примеры ввода суммы:*
 • `1500`
@@ -437,35 +534,63 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(balance_text, parse_mode="Markdown")
             
         elif text == "📈 Статистика":
-            stats = tracker.get_monthly_stats(user_id)
-            
-            stats_text = "📈 *Статистика за месяц:*\n\n"
-            
-            if stats["total_income"] > 0:
-                stats_text += f"💰 *Доходы:* {stats['total_income']:.2f} ₽\n"
-                for category, amount in stats["income"].items():
-                    stats_text += f"  • {category}: {amount:.2f} ₽\n"
-                stats_text += "\n"
-            
-            if stats["total_expense"] > 0:
-                stats_text += f"💸 *Расходы:* {stats['total_expense']:.2f} ₽\n"
-                for category, amount in stats["expense"].items():
-                    stats_text += f"  • {category}: {amount:.2f} ₽\n"
-                stats_text += "\n"
-            
-            difference = stats["total_income"] - stats["total_expense"]
-            stats_text += f"📊 *Разница:* {difference:.2f} ₽"
-            
-            if difference > 0:
-                stats_text += " ✅"
-            elif difference < 0:
-                stats_text += " ❌"
-            
-            # ✅ ИСПРАВЛЕНО: используем get_main_keyboard вместо get_dynamic_keyboard
-            await update.message.reply_text(stats_text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
+            user_states[user_id] = {"state": "select_stats_period"}
+            await update.message.reply_text(
+                "📊 Выбери период для статистики:",
+                reply_markup=get_stats_keyboard()
+            )
             
         elif text == "❓ Помощь":
             await help_command(update, context)
+    
+    elif state == "select_stats_period":
+        if text == "📅 За день":
+            stats = tracker.get_daily_stats(user_id)
+            period_text = "день"
+            
+        elif text == "📆 За неделю":
+            stats = tracker.get_weekly_stats(user_id)
+            period_text = "неделю"
+            
+        elif text == "🗓️ За месяц":
+            stats = tracker.get_monthly_stats(user_id)
+            period_text = "месяц"
+            
+        else:
+            return
+        
+        # Формируем текст статистики
+        stats_text = f"📈 *Статистика за {period_text}:*\n\n"
+        
+        if stats["total_income"] > 0:
+            stats_text += f"💰 *Доходы:* {stats['total_income']:.2f} ₽\n"
+            for category, amount in stats["income"].items():
+                stats_text += f"  • {category}: {amount:.2f} ₽\n"
+            stats_text += "\n"
+        
+        if stats["total_expense"] > 0:
+            stats_text += f"💸 *Расходы:* {stats['total_expense']:.2f} ₽\n"
+            for category, amount in stats["expense"].items():
+                stats_text += f"  • {category}: {amount:.2f} ₽\n"
+            stats_text += "\n"
+        
+        difference = stats["total_income"] - stats["total_expense"]
+        stats_text += f"📊 *Разница:* {difference:.2f} ₽"
+        
+        if difference > 0:
+            stats_text += " ✅"
+        elif difference < 0:
+            stats_text += " ❌"
+        
+        if stats["total_income"] == 0 and stats["total_expense"] == 0:
+            stats_text = f"📈 *Статистика за {period_text}:*\n\n📭 Нет транзакций за выбранный период"
+        
+        await update.message.reply_text(
+            stats_text, 
+            parse_mode="Markdown", 
+            reply_markup=get_main_keyboard(user_id)
+        )
+        user_states[user_id] = {"state": "main"}
     
     elif state == "select_expense_category":
         if text in EXPENSE_CATEGORIES:

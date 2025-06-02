@@ -425,45 +425,6 @@
             transform: translateY(-1px);
         }
 
-        .success-message {
-            position: absolute;
-            top: 65px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(76, 175, 80, 0.9);
-            border: 1px solid rgba(76, 175, 80, 0.4);
-            border-radius: 10px;
-            padding: 10px 15px;
-            margin: 0;
-            width: calc(100% - 40px);
-            text-align: center;
-            z-index: 1001;
-            opacity: 0;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to   { opacity: 1; }
-        }
-
-        @keyframes fadeOut {
-            from { opacity: 1; }
-            to   { opacity: 0; }
-        }
-
-        .success-message.fade-in {
-            animation: fadeIn 0.5s ease-out forwards;
-        }
-
-        .success-message.fade-out {
-            animation: fadeOut 0.5s ease-out forwards;
-        }
-
-        .success-icon {
-            font-size: 2rem;
-            margin-bottom: 10px;
-        }
-
         @keyframes rotate {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
@@ -591,12 +552,6 @@
         <div class="modal-content">
             <h3 id="modal-title">Добавить транзакцию</h3>
             
-            <!-- Сообщение об успехе -->
-            <div id="successMessage" class="success-message" style="display: none;">
-                <div class="success-icon">✅</div>
-                <div id="successText">Транзакция добавлена!</div>
-            </div>
-            
             <div class="form-group">
                 <label class="form-label">Сумма</label>
                 <input 
@@ -655,6 +610,8 @@
         let userData = {
             balance: 0,
             transactions: [],
+            dailyStats: { income: {}, expense: {}, total_income: 0, total_expense: 0 },
+            weeklyStats: { income: {}, expense: {}, total_income: 0, total_expense: 0 },
             monthlyStats: { income: {}, expense: {}, total_income: 0, total_expense: 0 }
         };
 
@@ -752,19 +709,54 @@
             const urlParams = new URLSearchParams(window.location.search);
             
             const balance = parseFloat(urlParams.get('balance')) || 0;
-            const income = parseFloat(urlParams.get('income')) || 0;
-            const expense = parseFloat(urlParams.get('expense')) || 0;
-            const expensesJson = urlParams.get('expenses');
+            
+            // Обновленная загрузка всех типов статистики
+            const dailyIncome = parseFloat(urlParams.get('dailyIncome')) || 0;
+            const dailyExpense = parseFloat(urlParams.get('dailyExpense')) || 0;
+            const dailyExpensesJson = urlParams.get('dailyExpenses');
+            
+            const weeklyIncome = parseFloat(urlParams.get('weeklyIncome')) || 0;
+            const weeklyExpense = parseFloat(urlParams.get('weeklyExpense')) || 0;
+            const weeklyExpensesJson = urlParams.get('weeklyExpenses');
+            
+            const monthlyIncome = parseFloat(urlParams.get('monthlyIncome')) || 0;
+            const monthlyExpense = parseFloat(urlParams.get('monthlyExpense')) || 0;
+            const monthlyExpensesJson = urlParams.get('monthlyExpenses');
             
             userData.balance = balance;
-            userData.monthlyStats.total_income = income;
-            userData.monthlyStats.total_expense = expense;
             
-            if (expensesJson && expensesJson !== '{}') {
+            // Дневная статистика
+            userData.dailyStats.total_income = dailyIncome;
+            userData.dailyStats.total_expense = dailyExpense;
+            if (dailyExpensesJson && dailyExpensesJson !== '{}') {
                 try {
-                    userData.monthlyStats.expense = JSON.parse(expensesJson);
+                    userData.dailyStats.expense = JSON.parse(dailyExpensesJson);
                 } catch (e) {
-                    console.warn('Ошибка парсинга категорий расходов:', e);
+                    console.warn('Ошибка парсинга категорий расходов за день:', e);
+                    userData.dailyStats.expense = {};
+                }
+            }
+            
+            // Недельная статистика
+            userData.weeklyStats.total_income = weeklyIncome;
+            userData.weeklyStats.total_expense = weeklyExpense;
+            if (weeklyExpensesJson && weeklyExpensesJson !== '{}') {
+                try {
+                    userData.weeklyStats.expense = JSON.parse(weeklyExpensesJson);
+                } catch (e) {
+                    console.warn('Ошибка парсинга категорий расходов за неделю:', e);
+                    userData.weeklyStats.expense = {};
+                }
+            }
+            
+            // Месячная статистика
+            userData.monthlyStats.total_income = monthlyIncome;
+            userData.monthlyStats.total_expense = monthlyExpense;
+            if (monthlyExpensesJson && monthlyExpensesJson !== '{}') {
+                try {
+                    userData.monthlyStats.expense = JSON.parse(monthlyExpensesJson);
+                } catch (e) {
+                    console.warn('Ошибка парсинга категорий расходов за месяц:', e);
                     userData.monthlyStats.expense = {};
                 }
             }
@@ -772,7 +764,7 @@
             console.log('📊 Данные загружены:', userData);
             
             updateBalance();
-            updateStats();
+            updateAllStats();
         }
 
         function updateBalance() {
@@ -789,11 +781,16 @@
             }, 1000);
         }
 
-        function updateStats() {
-            console.log('📈 Обновление статистики:', userData.monthlyStats);
-            const statsContent = document.getElementById('stats-content');
-            const statsCard = document.getElementById('statsCard');
-            const stats = userData.monthlyStats;
+        function updateAllStats() {
+            updateStatsCard('daily-stats-content', 'dailyStatsCard', userData.dailyStats);
+            updateStatsCard('weekly-stats-content', 'weeklyStatsCard', userData.weeklyStats);
+            updateStatsCard('stats-content', 'statsCard', userData.monthlyStats);
+        }
+
+        function updateStatsCard(contentId, cardId, stats) {
+            console.log(`📈 Обновление статистики для ${contentId}:`, stats);
+            const statsContent = document.getElementById(contentId);
+            const statsCard = document.getElementById(cardId);
             
             let html = '';
             
@@ -888,21 +885,30 @@
                 // Обновляем локальные данные (откатываем изменения)
                 if (removedTransaction.type === 'income') {
                     userData.balance -= removedTransaction.amount;
+                    userData.dailyStats.total_income -= removedTransaction.amount;
+                    userData.weeklyStats.total_income -= removedTransaction.amount;
                     userData.monthlyStats.total_income -= removedTransaction.amount;
                 } else {
                     userData.balance += removedTransaction.amount;
+                    userData.dailyStats.total_expense -= removedTransaction.amount;
+                    userData.weeklyStats.total_expense -= removedTransaction.amount;
                     userData.monthlyStats.total_expense -= removedTransaction.amount;
-                    if (userData.monthlyStats.expense[removedTransaction.category]) {
-                        userData.monthlyStats.expense[removedTransaction.category] -= removedTransaction.amount;
-                        if (userData.monthlyStats.expense[removedTransaction.category] <= 0) {
-                            delete userData.monthlyStats.expense[removedTransaction.category];
+                    
+                    // Убираем из категорий расходов
+                    const categories = [userData.dailyStats.expense, userData.weeklyStats.expense, userData.monthlyStats.expense];
+                    categories.forEach(expenseCategories => {
+                        if (expenseCategories[removedTransaction.category]) {
+                            expenseCategories[removedTransaction.category] -= removedTransaction.amount;
+                            if (expenseCategories[removedTransaction.category] <= 0) {
+                                delete expenseCategories[removedTransaction.category];
+                            }
                         }
-                    }
+                    });
                 }
                 
                 // Обновляем интерфейс
                 updateBalance();
-                updateStats();
+                updateAllStats();
                 updatePendingTransactions();
                 updateSaveButton();
                 
@@ -926,10 +932,6 @@
             const modalTitle = document.getElementById('modal-title');
             const categoryGroup = document.getElementById('category-group');
             const categoriesDiv = document.getElementById('categories');
-            const successMessage = document.getElementById('successMessage');
-            
-            // Скрываем сообщение об успехе
-            successMessage.style.display = 'none';
             
             if (type === 'income') {
                 modalTitle.textContent = 'Добавить доход';
@@ -994,39 +996,6 @@
             }, 300); // 300ms соответствует времени transition
         }
 
-        function showSuccessMessage(amount, category, type) {
-            const successMessage = document.getElementById('successMessage');
-            const successText = document.getElementById('successText');
-            
-            const typeText = type === 'income' ? 'Доход' : 'Расход';
-            successText.innerHTML = `
-                ${typeText} добавлен!<br>
-                <strong>${amount.toFixed(2)} ₽</strong> • ${category}
-            `;
-            
-            // 1) Убираем все классы-аниамции, чтобы точно «перезапустить» показ
-            successMessage.classList.remove('fade-in', 'fade-out');
-            // 2) Делаем элемент видимым сразу (opacity всё ещё = 0, но display: block)
-            successMessage.style.display = 'block';
-            
-            // 3) Через маленькую задержку (<  10 мс) запускаем fadeIn
-            setTimeout(() => {
-                successMessage.classList.add('fade-in'); // проиграет fadeIn 0.5s
-            }, 10);
-            
-            // 4) Через 500 мс (когда fadeIn уже отработал) запускаем fadeOut
-            setTimeout(() => {
-                successMessage.classList.remove('fade-in');
-                successMessage.classList.add('fade-out'); // проиграет fadeOut 0.5s
-            }, 500);
-            
-            // 5) Через 1000 мс (0.5 s fadeIn + 0.5 s fadeOut) скрываем полностью
-            setTimeout(() => {
-                successMessage.style.display = 'none';
-                successMessage.classList.remove('fade-out');
-            }, 1000);
-        }
-
         function clearForm() {
             document.getElementById('amount').value = '';
             document.getElementById('description').value = '';
@@ -1087,25 +1056,28 @@
             
             if (currentTransactionType === 'income') {
                 userData.balance += amount;
+                userData.dailyStats.total_income += amount;
+                userData.weeklyStats.total_income += amount;
                 userData.monthlyStats.total_income += amount;
             } else {
                 userData.balance -= amount;
+                userData.dailyStats.total_expense += amount;
+                userData.weeklyStats.total_expense += amount;
                 userData.monthlyStats.total_expense += amount;
-                if (!userData.monthlyStats.expense[selectedCategory]) {
-                    userData.monthlyStats.expense[selectedCategory] = 0;
-                }
-                userData.monthlyStats.expense[selectedCategory] += amount;
+                
+                // Добавляем в категории расходов для всех периодов
+                const categories = [userData.dailyStats.expense, userData.weeklyStats.expense, userData.monthlyStats.expense];
+                categories.forEach(expenseCategories => {
+                    if (!expenseCategories[selectedCategory]) {
+                        expenseCategories[selectedCategory] = 0;
+                    }
+                    expenseCategories[selectedCategory] += amount;
+                });
             }
             
             // Обновляем интерфейс
             updateBalance();
-            updateStats();
-            
-            // Показываем сообщение об успехе
-            showSuccessMessage(amount, transaction.category, currentTransactionType);
-            
-            // Очищаем форму
-            clearForm();
+            updateAllStats();
             
             // Добавляем транзакцию в очередь для синхронизации
             transactionQueue.push(transaction);
@@ -1125,6 +1097,14 @@
             if (tg?.HapticFeedback?.notificationOccurred) {
                 tg.HapticFeedback.notificationOccurred('success');
             }
+            
+            // Очищаем форму и закрываем модальное окно
+            clearForm();
+            
+            // Плавно закрываем модальное окно
+            setTimeout(() => {
+                closeModal();
+            }, 50);
             
             console.log('✅ Транзакция добавлена локально. Очередь:', transactionQueue.length);
         }
